@@ -1,0 +1,88 @@
+# Policy-controlled services on the node, separate from application endpoints.
+apiVersion: crd.projectcalico.org/v1
+kind: FelixConfiguration
+metadata:
+  name: default
+spec:
+  failsafeInboundHostPorts:
+    - protocol: TCP
+      port: 22
+      net: 192.168.1.0/24
+  failsafeOutboundHostPorts: []
+---
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: chopin-host-services
+spec:
+  order: 100
+  selector: "homelab/host == 'chopin'"
+  # Application forwarding is governed by workload policies, not this policy.
+  applyOnForward: false
+  types: [Ingress, Egress]
+  ingress:
+    - action: Allow
+      source:
+        nets: [127.0.0.0/8, "::1/128", 192.168.1.82/32]
+    - action: Allow
+      protocol: TCP
+      source:
+        nets: [192.168.1.0/24]
+      destination:
+        ports: [22]
+    - action: Allow
+      protocol: TCP
+      source:
+        selector: "projectcalico.org/namespace == 'kube-system'"
+      destination:
+        ports: [6443, 10250]
+    - action: Allow
+      protocol: UDP
+      source:
+        nets: [192.168.1.0/24]
+        ports: [67]
+      destination:
+        ports: [68]
+    - action: Allow
+      protocol: ICMP
+    - action: Allow
+      protocol: ICMPv6
+    - action: Deny
+  egress:
+    - action: Allow
+      destination:
+        nets: [127.0.0.0/8, "::1/128", 192.168.1.82/32, 10.42.0.0/16, 10.43.0.0/16]
+    - action: Allow
+      protocol: UDP
+      destination:
+        nets: [192.168.1.254/32, "fd0f:ee:b0::1/128"]
+        ports: [53]
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets: [192.168.1.254/32, "fd0f:ee:b0::1/128"]
+        ports: [53]
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports: [80, 443]
+    - action: Allow
+      protocol: UDP
+      destination:
+        ports: [123, 67]
+    - action: Allow
+      protocol: ICMP
+    - action: Allow
+      protocol: ICMPv6
+    - action: Deny
+---
+apiVersion: crd.projectcalico.org/v1
+kind: HostEndpoint
+metadata:
+  name: chopin
+  labels:
+    homelab/host: chopin
+spec:
+  node: chopin
+  interfaceName: "*"
+  expectedIPs: [192.168.1.82]
