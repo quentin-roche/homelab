@@ -54,9 +54,9 @@ password committed to this repository.
 
 ```mermaid
 flowchart LR
-  H[Headscale on trusted Chopin host<br/>central ACLs]
   L[Laptop identity]
   subgraph Host[Trusted NixOS host]
+    H[Headscale<br/>central ACLs]
     G[Host nftables guard<br/>only transport and DNS]
     T[Chopin Tailscale identity]
     B[Kata bridge 10.44.0.0/24]
