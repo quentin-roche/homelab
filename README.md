@@ -15,6 +15,8 @@ Initial configuration copied from `/etc/nixos` on 2026-09-30.
 
 - `configuration.nix`: system settings, user account, SSH, and Nix features.
 - `hardware-configuration.nix`: generated hardware and filesystem configuration.
+- `flake.nix`: the `chopin` NixOS system target, using the NixOS 26.05 branch.
+- `flake.lock`: pins nixpkgs to the revision used by the machine when this flake was created.
 
 ## Repository on Chopin
 
@@ -42,10 +44,20 @@ nix-shell -p git
 cd ~/chopin
 git pull --ff-only
 # Edit configuration.nix as needed.
-sudo nixos-rebuild switch
+sudo nixos-rebuild switch --flake /home/rocheque/chopin#chopin
 git add configuration.nix
 git commit -m "Update Chopin configuration"
 git push
+```
+
+For new Nix files, run `git add` before rebuilding so the flake includes them.
+
+To update the pinned NixOS 26.05 packages deliberately:
+
+```bash
+cd ~/chopin
+nix flake update nixpkgs
+sudo nixos-rebuild switch --flake .#chopin
 ```
 
 The hardware configuration belongs to this computer; review it before using it on another machine.
