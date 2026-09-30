@@ -25,7 +25,32 @@
   # networking.proxy.noProxy = "127.0.0.1,localhost,internal.domain";
 
   # Enable networking
-  networking.networkmanager.enable = true;
+  networking.networkmanager = {
+    enable = true;
+    settings.main.no-auto-default = "*";
+    # Keep the control endpoint independent of a DHCP lease after reinstall.
+    ensureProfiles.profiles.chopin-lan = {
+      connection = {
+        id = "chopin-lan";
+        uuid = "19549cb5-30c5-36a1-9dea-8eb19551b715";
+        type = "ethernet";
+        interface-name = "enp1s0f1";
+        autoconnect = true;
+      };
+      ipv4 = {
+        method = "manual";
+        address1 = "192.168.1.82/24,192.168.1.254";
+        dns = "192.168.1.254;";
+      };
+      ipv6.method = "auto";
+    };
+    unmanaged = [
+      # These unused ports have no IP configuration; do not wait for DHCP.
+      "interface-name:enp1s0f0" "interface-name:enp9s0"
+      "interface-name:cni0" "interface-name:kata0" "interface-name:veth*"
+      "interface-name:flannel*" "interface-name:cali*" "interface-name:tailscale0"
+    ];
+  };
 
   # Set your time zone.
   time.timeZone = "Europe/Paris";
@@ -60,6 +85,7 @@
     description = "Quentin";
     extraGroups = [ "networkmanager" "wheel" ];
     packages = with pkgs; [];
+    openssh.authorizedKeys.keyFiles = [ ./ssh/rocheque.pub ];
   };
 
   # List packages installed in system profile.

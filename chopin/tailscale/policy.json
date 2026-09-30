@@ -1,0 +1,6 @@
+{
+  "acls": [
+    {"action": "accept", "proto": "tcp", "src": ["tag:laptop"], "dst": ["tag:applications:8080", "tag:applications:5432"]},
+    {"action": "accept", "proto": "tcp", "src": ["tag:chopin"], "dst": ["tag:applications:8080"]}
+  ]
+}
