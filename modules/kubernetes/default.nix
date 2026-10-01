@@ -19,14 +19,29 @@ let
       "$out"
   '';
   upstreamCalico = (import ./sources.nix { inherit pkgs; }).calico;
-  calico =
-    pkgs.runCommand "calico.yaml"
-      {
-        nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.pyyaml ])) ];
-      }
-      ''
-        python ${./calico.py} ${upstreamCalico} ${lib.escapeShellArg cfg.interface} ${lib.escapeShellArg cfg.podCIDR} > "$out"
-      '';
+  calicoOverlay = pkgs.linkFarm "calico-overlay" [
+    {
+      name = "kustomization.yaml";
+      path = ./calico/kustomization.yaml;
+    }
+    {
+      name = "config.yaml";
+      path = ./calico/config.yaml;
+    }
+    {
+      name = "node.yaml";
+      path = pkgs.writeText "calico-node.yaml" (
+        lib.replaceStrings [ "@INTERFACE@" "@POD_CIDR@" ] [ cfg.interface cfg.podCIDR ] (
+          builtins.readFile ./calico/node.yaml.in
+        )
+      );
+    }
+  ];
+  calico = (import ./render.nix { inherit pkgs; }) {
+    name = "calico.yaml";
+    upstream = upstreamCalico;
+    overlay = calicoOverlay;
+  };
   hostSecurity = pkgs.writeText "host-security.yaml" (
     lib.replaceStrings
       [ "@NODE_NAME@" "@NODE_IP@" "@LAN_CIDR@" "@POD_CIDR@" "@SERVICE_CIDR@" "@DNS_CIDRS@" ]
@@ -92,6 +107,11 @@ in
       type = lib.types.listOf lib.types.str;
       description = "Host DNS resolvers as IPv4/IPv6 CIDRs.";
     };
+    recoveryHoldFile = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/homelab/restore-in-progress";
+      description = "External marker that prevents K3s and Flux credential startup until restored data is ready.";
+    };
     podCIDR = lib.mkOption {
       type = lib.types.str;
       default = "10.42.0.0/16";
@@ -108,6 +128,10 @@ in
       {
         assertion = pkgs.stdenv.hostPlatform.system == "x86_64-linux";
         message = "The pinned Kata bundle supports x86_64-linux only.";
+      }
+      {
+        assertion = lib.hasPrefix "/var/lib/" cfg.recoveryHoldFile;
+        message = "The recovery hold marker must be outside the Nix store, under /var/lib/.";
       }
     ];
     boot.kernelModules = [
@@ -172,6 +196,7 @@ in
     };
     systemd.services.k3s.requires = [ "homelab-network-guard.service" ];
     systemd.services.k3s.after = [ "homelab-network-guard.service" ];
+    systemd.services.k3s.unitConfig.ConditionPathExists = "!${cfg.recoveryHoldFile}";
     services.k3s = {
       enable = true;
       role = "server";

@@ -29,10 +29,9 @@ schedule has been configured by this repo cleanup.
 
 ## 1. Verify administrative access and choose a recovery mode
 
-The running host currently rejects the selected personal key. Before switching
-the live host to this key-only configuration, enroll the public key through the
-existing interactive login or console and confirm a **new** key-only SSH session,
-then validate sudo privileges. Follow the [migration steps](../chopin/README.md).
+The personal key was enrolled and a fresh key-only administrative connection
+verified on 2026-10-01. Before any later migration, confirm a **new** key-only SSH
+session and validate sudo privileges. Follow the [migration steps](../chopin/README.md).
 Do not rely on an already-open password-authenticated session. If access is
 lost, use the NixOS installer/console to mount and repair the existing system.
 
@@ -56,10 +55,10 @@ For a stateful recovery, set `homelab.kubernetes.flux.suspend = true;` in the
 recovery checkout's `chopin/kubernetes.nix` **before** installing. This is a
 Nix-owned root flag; keep it suspended until data is ready. Set `flux.revision`
 to the exact reviewed Git commit if recovery must not follow new `main` changes.
-Do not write a real secret into the recovery checkout. Restored child
-Kustomizations/HelmReleases can run independently of a suspended parent, so a
-restored full datastore must be paired with restored volume data before K3s
-starts. Parent suspension alone is not a workload stop.
+Do not write a real secret into the recovery checkout. Existing Pods and
+HelmReleases can continue independently of a suspended root, so a restored full
+datastore must be paired with restored volume data before K3s starts. Root
+suspension alone is not a workload stop.
 
 ## 2. Reinstall NixOS and restore state before startup when required
 
@@ -68,14 +67,16 @@ original UUIDs, then installs the pinned host closure. A normal rebuild does
 not partition disks. Do not attach the old disk with identical UUIDs to the
 new installation. Preserve/restore SSH host keys only from trusted backups.
 
-For a full datastore restore, create a K3s mask on the live installer:
+For a full datastore restore, create a recovery marker on the live installer:
 
 ```sh
-ln -s /dev/null /tmp/k3s.service
+touch /tmp/restore-in-progress
 ```
 
-Add `--extra-files /tmp/k3s.service /etc/systemd/system/k3s.service` to the Disko
-installation command. After reboot, K3s is masked. Mount the protected backup
+Add `--extra-files /tmp/restore-in-progress /var/lib/homelab/restore-in-progress`
+to the Disko installation command. Nix declares startup conditions for K3s and
+Flux credentials that hold both services while this marker exists. Do not place
+manual masks in `/etc/systemd/system`, which Nix manages. Mount the protected backup
 and restore `/var/lib/rancher/k3s/server` and `/var/lib/rancher/k3s/storage` with
 original ownership/modes. Do not merge a fresh SQLite database with the backup;
 restore the matching token/encryption material. Restore external volumes too.
@@ -92,16 +93,15 @@ external backup.
 
 ## 3. Start and verify the Nix-owned cluster runtime
 
-For a full datastore recovery, remove only the temporary K3s mask after all
+For a full datastore recovery, remove only the recovery marker after all
 matched data is restored:
 
 ```sh
-sudo systemctl unmask k3s
-sudo systemctl daemon-reload
+sudo rm /var/lib/homelab/restore-in-progress
 sudo systemctl start k3s
 ```
 
-For a fresh install without the mask, K3s starts automatically. Verify at the
+For a fresh install without the marker, K3s starts automatically. Verify at the
 console or through a newly authenticated SSH connection:
 
 ```sh
@@ -157,7 +157,7 @@ sudo k3s kubectl get pods -n applications
 sudo k3s kubectl get pvc,pv -A
 ```
 
-Infrastructure becomes Ready before the apps Kustomization proceeds. Check
+One root Kustomization reconciles the selected applications and services. Check
 Secret decryption without printing values, application health, database/data
 integrity, volume bindings, and isolation. Verify LAN/API restrictions and a
 fresh key-authenticated administrator session. A Ready Flux object proves

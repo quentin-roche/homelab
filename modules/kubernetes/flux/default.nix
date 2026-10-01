@@ -8,14 +8,21 @@ let
   cluster = config.homelab.kubernetes;
   cfg = cluster.flux;
   distribution = import ./sources.nix { inherit pkgs; };
-  runtime =
-    pkgs.runCommand "flux-runtime.yaml"
-      {
-        nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.pyyaml ])) ];
-      }
-      ''
-        python ${./render.py} ${distribution.install} ${lib.escapeShellArg cluster.nodeIP} ${lib.escapeShellArg cluster.serviceCIDR} ${lib.escapeShellArg cluster.podCIDR} ${lib.escapeShellArg cluster.lanCIDR} > "$out"
-      '';
+  runtime = (import ../render.nix { inherit pkgs; }) {
+    name = "flux-runtime.yaml";
+    upstream = distribution.install;
+    overlay = ./.;
+  };
+  serviceOctets = lib.splitString "." (builtins.head (lib.splitString "/" cluster.serviceCIDR));
+  apiIP = lib.concatStringsSep "." (
+    lib.take 3 serviceOctets ++ [ (toString (lib.toInt (lib.last serviceOctets) + 1)) ]
+  );
+  networkPolicy = pkgs.writeText "flux-network-policy.yaml" (
+    lib.replaceStrings
+      [ "@NODE_IP@" "@API_IP@" "@SERVICE_CIDR@" "@POD_CIDR@" "@LAN_CIDR@" ]
+      [ cluster.nodeIP apiIP cluster.serviceCIDR cluster.podCIDR cluster.lanCIDR ]
+      (builtins.readFile ./network-policy.yaml.in)
+  );
   sync = pkgs.writeText "flux-sync.json" (
     builtins.toJSON {
       apiVersion = "v1";
@@ -53,7 +60,7 @@ let
               kind = "GitRepository";
               name = "homelab";
             };
-            serviceAccountName = "flux-orchestrator";
+            serviceAccountName = "flux-reconciler";
             prune = true;
             deletionPolicy = "Orphan";
             suspend = cfg.suspend;
@@ -108,6 +115,10 @@ in
   config = lib.mkIf (cluster.enable && cfg.enable) {
     assertions = [
       {
+        assertion = builtins.length serviceOctets == 4;
+        message = "The Flux networking overlay requires an IPv4 service CIDR.";
+      }
+      {
         assertion = lib.hasPrefix "https://" cfg.repository && !(lib.hasInfix "@" cfg.repository);
         message = "Flux requires an HTTPS repository URL without embedded credentials.";
       }
@@ -128,6 +139,7 @@ in
       "30-flux-runtime".source = runtime;
       "31-flux-rbac".source = ./rbac.yaml;
       "32-flux-sync".source = sync;
+      "33-flux-network".source = networkPolicy;
     };
     environment.systemPackages = [
       pkgs.fluxcd
@@ -143,7 +155,10 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "k3s.service" ];
       requires = [ "k3s.service" ];
-      unitConfig.ConditionPathExists = cfg.ageIdentityFile;
+      unitConfig.ConditionPathExists = [
+        cfg.ageIdentityFile
+        "!${cluster.recoveryHoldFile}"
+      ];
       path = [
         config.services.k3s.package
         pkgs.kubectl
@@ -153,7 +168,7 @@ in
         pkgs.jq
       ];
       script = ''
-        exec ${pkgs.bash}/bin/bash ${../../../scripts/bootstrap-flux.sh} ${lib.escapeShellArg cfg.ageIdentityFile} ${
+        exec ${pkgs.bash}/bin/bash ${../../../scripts/provision-flux-credentials.sh} ${lib.escapeShellArg cfg.ageIdentityFile} ${
           lib.optionalString (cfg.gitCredentialDirectory != null) (
             lib.escapeShellArg cfg.gitCredentialDirectory
           )

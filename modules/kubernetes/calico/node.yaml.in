@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: calico-node
+  namespace: kube-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: calico-node
+          env:
+            - name: CLUSTER_TYPE
+              value: k8s
+            - name: CALICO_IPV4POOL_IPIP
+              value: Never
+            - name: CALICO_IPV4POOL_VXLAN
+              value: Always
+            - name: CALICO_IPV4POOL_CIDR
+              value: "@POD_CIDR@"
+            - name: IP_AUTODETECTION_METHOD
+              value: "interface=@INTERFACE@"
+            - name: FELIX_DEFAULTENDPOINTTOHOSTACTION
+              value: RETURN
+            - name: FELIX_IPTABLESBACKEND
+              value: NFT
+            - name: FELIX_IPV6SUPPORT
+              value: "true"
+            - name: FELIX_ENDPOINTSTATUSPATHPREFIX
+              value: /var/run/calico
+          livenessProbe:
+            exec:
+              command: [/bin/calico-node, -felix-live]
+          readinessProbe:
+            exec:
+              command: [/bin/calico-node, -felix-ready]
+      initContainers:
+        - name: install-cni
+          env:
+            - name: CNI_NET_DIR
+              value: /var/lib/rancher/k3s/agent/etc/cni/net.d
+      volumes:
+        - name: cni-bin-dir
+          hostPath:
+            path: /var/lib/rancher/k3s/data/cni
+        - name: cni-net-dir
+          hostPath:
+            path: /var/lib/rancher/k3s/agent/etc/cni/net.d
+            type: DirectoryOrCreate
+        - name: lib-modules
+          hostPath:
+            path: /run/current-system/kernel-modules/lib/modules

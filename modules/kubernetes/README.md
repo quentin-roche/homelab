@@ -96,20 +96,13 @@ runtime and isolation manifests only; do not add application objects to
 `services.k3s.manifests`. The Nix-owned root source/sync references the cluster
 entry point and does not reconcile itself through Git.
 
-The Flux-managed starter web app is selected in `kubernetes/clusters/chopin/apps`.
-After reconciliation, inspect it locally on Chopin:
+The Flux cluster entry point starts empty; select real applications there.
+Use administrator `kubectl port-forward`/`exec` for troubleshooting, remembering
+that this privileged access is not ordinary pod-to-pod firewall traffic.
 
-```sh
-sudo k3s kubectl rollout status -n applications deployment/web
-sudo k3s kubectl exec -n applications deployment/web -- uname -r
-sudo k3s kubectl port-forward -n applications service/web 8080:8080
-```
-
-The last command allows an administrator to inspect the app locally on
-Chopin at `http://127.0.0.1:8080`. Administrative port-forward/exec access is
-privileged access and is not governed by ordinary pod-to-pod firewall rules.
-For a browser on your computer, separately forward the local port over SSH:
-`ssh -L 8080:127.0.0.1:8080 rocheque@192.168.1.82`.
+Calico and Flux use checksum-pinned upstream manifests with local Kustomize
+patches. Host-specific substitutions are supplied by Nix. There are no Python
+manifest generators. The one credential helper provisions external keys only.
 
 The RuntimeClass reserves 1 GiB and 100 millicores of additional capacity per
 pod for conservative VM overhead accounting. With workload limits, Kata sizes

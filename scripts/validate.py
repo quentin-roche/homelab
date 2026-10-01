@@ -1,11 +1,11 @@
-"""Offline checks for ownership, Flux dependencies, RBAC, schemas and isolation."""
+"""Offline checks for ownership, RBAC, schemas and isolation."""
 import argparse
 import hashlib
 import json
 import re
 import subprocess
 import sys
-import tarfile
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -68,15 +68,15 @@ def main():
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--flux-manifest', type=Path, required=True)
     parser.add_argument('--kubernetes-schema', type=Path, required=True)
-    parser.add_argument('--chart', type=Path, required=True)
+    parser.add_argument('--helm-chart', action='append', default=[], metavar='RELEASE=PATH',
+        help='Checksum-pinned local chart artifact for each selected HelmRelease')
     parser.add_argument('--calico-manifest', type=Path, required=True)
     parser.add_argument('--runtime-inputs', type=Path, required=True)
     args = parser.parse_args()
     repo = args.repo.resolve()
     require(hashlib.sha256(args.flux_manifest.read_bytes()).hexdigest() ==
         'cc3dcd743af16215838b6937e1fce83745bf24c0dcc6c59737c59df15429caaf', 'Flux distribution checksum changed')
-    require(hashlib.sha256(args.chart.read_bytes()).hexdigest() ==
-        '5ca7896889b539e04cdad4df2093ff1ff7576295e7e3ef90a1e1845e3a334d75', 'Helm chart checksum changed')
+    charts = dict(value.split('=', 1) for value in args.helm_chart)
     require(hashlib.sha256(args.kubernetes_schema.read_bytes()).hexdigest() ==
         '483500149ee52ce5753d75f5639101d985bb4f5e902cc05b1ba7627465d62446', 'Kubernetes schema checksum changed')
 
@@ -109,13 +109,22 @@ def main():
                 if v['served']:
                     schemas[(spec['group'] + '/' + v['name'], spec['names']['kind'])] = v['schema']['openAPIV3Schema']
 
-    # Build the Nix-owned Flux runtime and test an independent second host.
-    runtime = load(run(sys.executable, str(repo / 'modules/kubernetes/flux/render.py'),
-        str(args.flux_manifest), inputs['nodeIP'], inputs['serviceCIDR'], inputs['podCIDR'], inputs['lanCIDR']))
-    other = load(run(sys.executable, str(repo / 'modules/kubernetes/flux/render.py'),
-        str(args.flux_manifest), '172.16.8.20', '10.53.0.0/16', '10.52.0.0/16', '172.16.8.0/24'))
-    other_policy = next(x for x in other if x['kind'] == 'GlobalNetworkPolicy')
-    require('192.168.1.82' not in json.dumps(other_policy) and '10.43.' not in json.dumps(other_policy), 'Shared Flux policy hardcodes Chopin')
+    def overlay(directory, upstream, replacements=None):
+        with tempfile.TemporaryDirectory() as temp:
+            td = Path(temp)
+            for path in directory.glob('*.yaml*'):
+                text = path.read_text()
+                for before, after in (replacements or {}).items():
+                    text = text.replace(before, after)
+                (td / path.name.removesuffix('.in')).write_text(text)
+            shutil.copyfile(upstream, td / 'upstream.yaml')
+            return load(run('kustomize', 'build', str(td)))
+
+    runtime = overlay(repo / 'modules/kubernetes/flux', args.flux_manifest)
+    runtime += load(inputs['fluxNetwork'])
+    marker = '!' + inputs['recoveryHoldFile']
+    require(inputs['k3sConditions'] == marker and marker in inputs['credentialConditions'],
+        'Recovery marker must gate both K3s and credential provisioning')
     deployments = [x for x in runtime if x['kind'] == 'Deployment']
     require({x['metadata']['name'] for x in deployments} ==
         {'source-controller', 'kustomize-controller', 'helm-controller'}, 'Unexpected controller set')
@@ -131,8 +140,8 @@ def main():
     require(len(https) == 1 and https[0]['source']['selector'] == "app == 'source-controller'" and
         https[0]['destination']['ports'] == [443] and '192.168.0.0/16' in https[0]['destination']['notNets'], 'Excessive Flux Internet/LAN egress')
 
-    calico = load(run(sys.executable, str(repo / 'modules/kubernetes/calico.py'),
-        str(args.calico_manifest), inputs['interface'], inputs['podCIDR']))
+    calico = overlay(repo / 'modules/kubernetes/calico', args.calico_manifest,
+        {'@INTERFACE@': inputs['interface'], '@POD_CIDR@': inputs['podCIDR']})
     cm = next(o for o in calico if o['kind'] == 'ConfigMap' and o['metadata']['name'] == 'calico-config')
     cni = json.loads(cm['data']['cni_network_config'].replace('__CNI_MTU__', '0'))
     require(next(p for p in cni['plugins'] if p['type'] == 'calico')['policy_setup_timeout_seconds'] == 30, 'CNI fails open during policy setup')
@@ -160,9 +169,11 @@ def main():
                 if group in r['apiGroups'] and resource in r['resources'] and verb in r['verbs']:
                     return True
         return False
-    for sa in ['flux-apps', 'flux-infrastructure', 'flux-orchestrator']:
+    for sa in ['flux-reconciler']:
         require(not allowed(sa, {'apiVersion': 'node.k8s.io/v1', 'kind': 'RuntimeClass', 'metadata': {'name': 'kata-qemu'}}, 'patch'), 'Flux can modify Kata')
-    require(not allowed('flux-apps', {'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': {'name': 'x', 'namespace': 'platform-services'}}, 'create'), 'App reconciler crosses boundary')
+    require(not allowed('flux-reconciler', {'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': {'name': 'x', 'namespace': 'kube-system'}}, 'create'), 'Reconciler can change system workloads')
+    for ns in ['applications', 'platform-services']:
+        require(allowed('flux-reconciler', {'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': {'name': 'x', 'namespace': ns}}, 'create'), 'Workload scope missing')
 
     owned = {}
     resources = []
@@ -177,55 +188,53 @@ def main():
     for obj in seed:
         own(obj, 'Nix bootstrap')
     root = next(obj for obj in seed if obj['kind'] == 'Kustomization')
-    require(root['spec']['serviceAccountName'] == 'flux-orchestrator', 'Invalid root impersonation')
+    require(root['spec']['serviceAccountName'] == 'flux-reconciler', 'Invalid root impersonation')
     source = next(obj for obj in seed if obj['kind'] == 'GitRepository')
     require(source['metadata']['name'] == root['spec']['sourceRef']['name'] == 'homelab', 'Root source mismatch')
     for api, kind, name in [('v1', 'Secret', 'sops-age'), ('v1', 'Secret', 'flux-git-auth')]:
         owned[key({'apiVersion': api, 'kind': kind, 'metadata': {'name': name, 'namespace': 'flux-system'}})] = 'Nix bootstrap'
 
-    entry = repo / root['spec']['path']
-    children = load(run('kustomize', 'build', str(entry)))
-    require(all(x['kind'] == 'Kustomization' and x['apiVersion'] == 'kustomize.toolkit.fluxcd.io/v1' for x in children), 'Cluster root must contain only child reconciliation objects')
-    names = {x['metadata']['name'] for x in children}
-    deps = {x['metadata']['name']: [d['name'] for d in x['spec'].get('dependsOn', [])] for x in children}
-    def visit(name, trail):
-        require(name not in trail, 'Flux dependency cycle')
-        require(name in names, 'Unresolved Flux dependency')
-        for dep in deps[name]: visit(dep, trail + [name])
-    for name in names: visit(name, [])
-    require('infrastructure' in deps['apps'], 'Apps must wait for infrastructure')
-    for obj in children:
-        own(obj, 'Flux cluster')
-        require(allowed('flux-orchestrator', obj, 'create'), 'Root lacks child reconciliation permissions')
-        spec = obj['spec']
-        require(spec['decryption'] == {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}, 'SOPS configuration missing')
-        require(spec['sourceRef'] == {'kind': 'GitRepository', 'name': 'homelab'}, 'Unresolved source')
-        path = (repo / spec['path']).resolve()
-        require(path.is_relative_to(repo / 'kubernetes') and (path / 'kustomization.yaml').is_file(), 'Missing/escaping reconciliation path')
-        built = load(run('kustomize', 'build', str(path)))
-        for child in built:
-            require(allowed(spec['serviceAccountName'], child, 'create') and allowed(spec['serviceAccountName'], child, 'patch'), f'RBAC denies {key(child)}')
-            own(child, f"Flux {obj['metadata']['name']}")
-            isolated(child)
-            if child['kind'] != 'HelmRelease': continue
-            hs = child['spec']
-            require(hs['chart']['spec']['version'] == '6.15.0', 'Unpinned chart')
-            require(hs['targetNamespace'] == hs['storageNamespace'] == 'platform-services', 'Helm storage/target scope mismatch')
-            require(not hs['test']['enable'] and not hs['install']['createNamespace'], 'Unexpected hooks/namespace ownership')
-            with tempfile.TemporaryDirectory() as temp:
-                td = Path(temp)
-                (td / 'values.yaml').write_text(yaml.safe_dump(hs['values']))
-                rendered = run('helm', 'template', child['metadata']['name'], str(args.chart),
-                    '--namespace', hs['targetNamespace'], '--kube-version', '1.35.0', '--skip-tests',
-                    '--values', str(td / 'values.yaml'))
-                (td / 'helm.yaml').write_text(rendered)
-                patches = [p for renderer in hs['postRenderers'] for p in renderer['kustomize']['patches']]
-                (td / 'kustomization.yaml').write_text(yaml.safe_dump({'apiVersion': 'kustomize.config.k8s.io/v1beta1',
-                    'kind': 'Kustomization', 'resources': ['helm.yaml'], 'patches': patches}))
-                for workload in load(run('kustomize', 'build', str(td))):
-                    require(allowed(hs['serviceAccountName'], workload, 'create'), f'Helm RBAC denies {key(workload)}')
-                    own(workload, 'Flux Helm')
-                    isolated(workload)
+    require(root['spec']['decryption'] == {'provider': 'sops', 'secretRef': {'name': 'sops-age'}},
+        'SOPS configuration missing')
+    entry = (repo / root['spec']['path']).resolve()
+    require(entry.is_relative_to(repo / 'kubernetes') and (entry / 'kustomization.yaml').is_file(),
+        'Missing/escaping reconciliation path')
+    for obj in load(run('kustomize', 'build', str(entry))):
+        require(allowed('flux-reconciler', obj, 'create') and allowed('flux-reconciler', obj, 'patch'),
+            f'RBAC denies {key(obj)}')
+        own(obj, 'Flux')
+        isolated(obj)
+        if obj['kind'] != 'HelmRelease':
+            continue
+        hs = obj['spec']
+        chart = hs['chart']['spec']
+        require(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?', chart['version']),
+            'Helm chart must have an exact version')
+        ns = hs['targetNamespace']
+        require(ns in ['applications', 'platform-services'] and hs['storageNamespace'] == ns,
+            'Helm storage/target scope mismatch')
+        require(hs['serviceAccountName'] == 'flux-reconciler' and
+            not hs.get('install', {}).get('createNamespace', False), 'Invalid Helm permissions')
+        release = obj['metadata']['name']
+        require(release in charts, f'Supply the pinned {release} chart with --helm-chart {release}=PATH')
+        metadata = yaml.safe_load(run('helm', 'show', 'chart', charts[release]))
+        require(metadata['name'] == chart['chart'] and metadata['version'] == chart['version'],
+            'Supplied chart does not match the HelmRelease name/version')
+        with tempfile.TemporaryDirectory() as temp:
+            td = Path(temp)
+            (td / 'values.yaml').write_text(yaml.safe_dump(hs.get('values', {})))
+            rendered = run('helm', 'template', release, charts[release], '--namespace', ns,
+                '--kube-version', '1.35.0', '--skip-tests', '--values', str(td / 'values.yaml'))
+            (td / 'helm.yaml').write_text(rendered)
+            patches = [p for renderer in hs.get('postRenderers', [])
+                for p in renderer.get('kustomize', {}).get('patches', [])]
+            (td / 'kustomization.yaml').write_text(yaml.safe_dump({
+                'apiVersion': 'kustomize.config.k8s.io/v1beta1', 'kind': 'Kustomization',
+                'resources': ['helm.yaml'], 'patches': patches}))
+            for workload in load(run('kustomize', 'build', str(td))):
+                require(allowed('flux-reconciler', workload, 'create'), f'Helm RBAC denies {key(workload)}')
+                own(workload, 'Flux Helm')
+                isolated(workload)
 
     encrypted = []
     for path in repo.rglob('*'):
@@ -257,7 +266,7 @@ def main():
                 raise ValueError(f'Schema validation for {key(obj)}: {exc}') from exc
         else:
             raise ValueError(f'No schema for {key(obj)}')
-    print(f'PASS: {len(resources)} resources; Kustomize/Helm rendering; Kubernetes/Flux/Calico schemas; ownership; dependency graph; scoped RBAC; Kata/restricted contexts; Flux network boundaries; secret hygiene.')
+    print(f'PASS: {len(resources)} resources; Kustomize rendering; selected Helm charts; Kubernetes/Flux/Calico schemas; ownership; scoped RBAC; Kata/restricted contexts; Flux network boundaries; secret hygiene.')
     print('NOT VERIFIED: live admission/traffic, image pulls, VM startup, Git reconciliation, age decryption, reinstall and data restore.')
 
 

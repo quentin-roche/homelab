@@ -36,9 +36,9 @@ OS hostname to `chopin`, replaces NetworkManager with a static networkd profile,
 locks password logins, and renames the network guard. Keep console access for
 the first activation, and verify the interface, gateway, and reserved address.
 
-The personal key was not accepted by the running server during the repository
-cleanup. Enroll it once using the existing login from the administrator's Mac
-(or copy the public key through Chopin's console):
+The personal key was enrolled and a fresh key-only administrative connection
+verified on 2026-10-01. For a replacement host, enroll it through the existing
+login or console if necessary:
 
 ```sh
 ssh-copy-id -i ~/.ssh/personal.pub rocheque@192.168.1.82
@@ -144,13 +144,14 @@ Optionally protect SSH host keys and administrator home data too. No off-machine
 backup destination is configured.
 
 For restoring a cluster, use the same locked K3s version as the backup. Before
-first boot of the reinstall, create `ln -s /dev/null /tmp/k3s.service` on the
-installer and add `--extra-files /tmp/k3s.service /etc/systemd/system/k3s.service`
-to the installation command. This masks K3s until the backup is restored. Disko's installed root is
+first boot, create `touch /tmp/restore-in-progress` on the installer and add
+`--extra-files /tmp/restore-in-progress /var/lib/homelab/restore-in-progress`
+to the installation command. Nix's startup conditions hold K3s and Flux
+credentials until this marker is removed. Disko's installed root is
 `/mnt/disko-install-root` during installation and is unmounted when it returns.
-After booting with K3s masked, mount the backup, restore both server and storage
-directories with ownership/modes intact, then remove only this mask with
-`sudo systemctl unmask k3s`, run `sudo systemctl daemon-reload`, and start K3s.
+After booting with K3s held, mount the backup, restore both server and storage
+directories with ownership/modes intact, remove the marker with
+`sudo rm /var/lib/homelab/restore-in-progress`, and start K3s.
 Do not merge a fresh SQLite database with a backup or lose the original token.
 
 If a normal update breaks networking or access, choose the previous generation

@@ -49,7 +49,11 @@
               lanCIDR = c.homelab.kubernetes.lanCIDR;
               serviceCIDR = c.homelab.kubernetes.serviceCIDR;
               fluxSync = c.services.k3s.manifests."32-flux-sync".source.text;
+              fluxNetwork = c.services.k3s.manifests."33-flux-network".source.text;
               hostSecurity = c.services.k3s.manifests."20-host-security".source.text;
+              recoveryHoldFile = c.homelab.kubernetes.recoveryHoldFile;
+              k3sConditions = c.systemd.services.k3s.unitConfig.ConditionPathExists;
+              credentialConditions = c.systemd.services.flux-bootstrap.unitConfig.ConditionPathExists;
             }
           );
           python = pkgs.python3.withPackages (p: [
@@ -67,7 +71,7 @@
               python
             ];
             text = ''
-              exec python ${./scripts/validate.py} --flux-manifest ${sources.install} --kubernetes-schema ${sources.kubernetesSchema} --chart ${sources.podinfoChart} --calico-manifest ${coreSources.calico} --runtime-inputs ${runtimeInputs} "$@"
+              exec python ${./scripts/validate.py} --flux-manifest ${sources.install} --kubernetes-schema ${sources.kubernetesSchema} --calico-manifest ${coreSources.calico} --runtime-inputs ${runtimeInputs} "$@"
             '';
           };
         }
