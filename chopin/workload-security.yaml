@@ -11,40 +11,6 @@ scheduling:
   nodeSelector:
     homelab/kata: "true"
 ---
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: applications
-  labels:
-    pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/enforce-version: v1.35
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/warn: restricted
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: default
-  labels:
-    pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/enforce-version: v1.35
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/warn: restricted
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: default
-  namespace: applications
-automountServiceAccountToken: false
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: default
-  namespace: default
-automountServiceAccountToken: false
----
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -71,9 +37,13 @@ spec:
     - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath))"
       message: Host filesystem mounts are forbidden.
     - expression: "variables.containers.all(c, !has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0))"
-      message: Host ports are forbidden; use Services and explicit Calico rules.
-    - expression: "variables.containers.all(c, !has(c.securityContext) || ((!has(c.securityContext.privileged) || !c.securityContext.privileged) && (!has(c.securityContext.allowPrivilegeEscalation) || !c.securityContext.allowPrivilegeEscalation)))"
-      message: Privileged containers and privilege escalation are forbidden.
+      message: Host ports are forbidden; use Tailscale addresses.
+    - expression: "variables.containers.filter(c, c.name != 'tailscale').all(c, !has(c.securityContext) || ((!has(c.securityContext.privileged) || !c.securityContext.privileged) && (!has(c.securityContext.allowPrivilegeEscalation) || !c.securityContext.allowPrivilegeEscalation)))"
+      message: Only the administrator-defined Tailscale init sidecar may be privileged.
+    - expression: "object.spec.containers.all(c, c.name != 'tailscale') && (!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.all(c, c.name != 'tailscale'))"
+      message: The tailscale name is reserved for the injected init sidecar.
+    - expression: "variables.containers.filter(c, c.name != 'tailscale').all(c, has(c.securityContext) && ((has(c.securityContext.runAsNonRoot) && c.securityContext.runAsNonRoot) || (!has(c.securityContext.runAsNonRoot) && has(object.spec.securityContext) && has(object.spec.securityContext.runAsNonRoot) && object.spec.securityContext.runAsNonRoot)) && has(c.securityContext.allowPrivilegeEscalation) && !c.securityContext.allowPrivilegeEscalation && has(c.securityContext.capabilities) && has(c.securityContext.capabilities.drop) && 'ALL' in c.securityContext.capabilities.drop && (!has(c.securityContext.capabilities.add) || c.securityContext.capabilities.add.all(x, x == 'NET_BIND_SERVICE')))"
+      message: Applications must run non-root with no privilege escalation and drop ALL capabilities.
     - expression: "!has(object.metadata.annotations) || object.metadata.annotations.all(k, !k.startsWith('io.katacontainers.') && k != 'k8s.v1.cni.cncf.io/networks' && !(k in ['cni.projectcalico.org/ipAddrs', 'cni.projectcalico.org/ipAddrsNoIpam', 'cni.projectcalico.org/ipv4pools', 'cni.projectcalico.org/ipv6pools', 'cni.projectcalico.org/floatingIPs', 'cni.projectcalico.org/allowSpoofedSourcePrefixes']))"
       message: Workloads cannot override the hypervisor or attach extra networks.
     - expression: "!has(object.spec.resourceClaims) || size(object.spec.resourceClaims) == 0"
@@ -88,29 +58,3 @@ metadata:
 spec:
   policyName: require-kata-isolation
   validationActions: [Deny]
----
-# Security-group allow policies must have an order smaller than 1000.
-# This explicit final deny cannot be opened by an ordinary NetworkPolicy.
-apiVersion: crd.projectcalico.org/v1
-kind: GlobalNetworkPolicy
-metadata:
-  name: application-default-deny
-spec:
-  order: 1000
-  selector: all()
-  namespaceSelector: "projectcalico.org/name not in {'kube-system', 'kube-public', 'kube-node-lease'}"
-  types: [Ingress, Egress]
-  ingress:
-    - action: Deny
-  egress:
-    - action: Allow
-      protocol: UDP
-      destination:
-        selector: "projectcalico.org/namespace == 'kube-system' && k8s-app == 'kube-dns'"
-        ports: [53]
-    - action: Allow
-      protocol: TCP
-      destination:
-        selector: "projectcalico.org/namespace == 'kube-system' && k8s-app == 'kube-dns'"
-        ports: [53]
-    - action: Deny
