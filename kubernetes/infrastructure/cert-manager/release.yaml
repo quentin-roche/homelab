@@ -1,0 +1,125 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://charts.jetstack.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  interval: 15m
+  timeout: 10m
+  releaseName: cert-manager
+  serviceAccountName: flux-reconciler
+  targetNamespace: platform-services
+  storageNamespace: platform-services
+  chart:
+    spec:
+      chart: cert-manager
+      version: v1.21.2
+      sourceRef:
+        kind: HelmRepository
+        name: cert-manager
+        namespace: flux-system
+      interval: 1h
+  install:
+    createNamespace: false
+    crds: Skip
+    remediation:
+      retries: 3
+  upgrade:
+    crds: Skip
+    remediation:
+      retries: 3
+  values:
+    global:
+      leaderElection:
+        namespace: platform-services
+      rbac:
+        aggregateClusterRoles: false
+    crds:
+      enabled: false
+    runtimeClassName: kata-qemu
+    podLabels:
+      homelab/controller: cert-manager
+    securityContext: &id001
+      runAsNonRoot: true
+      runAsUser: 1001
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext: &id002
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+        - ALL
+    resources: &id003
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: '1'
+        memory: 512Mi
+    startupapicheck:
+      enabled: false
+    prometheus:
+      enabled: false
+    extraArgs:
+    - --cluster-resource-namespace=platform-services
+    - --acme-http01-solver-resource-limits-cpu=100m
+    - --acme-http01-solver-resource-limits-memory=64Mi
+    webhook:
+      runtimeClassName: kata-qemu
+      podLabels:
+        homelab/controller: cert-manager-webhook
+      securityContext: *id001
+      containerSecurityContext: *id002
+      resources: *id003
+    cainjector:
+      runtimeClassName: kata-qemu
+      podLabels:
+        homelab/controller: cert-manager-cainjector
+      securityContext: *id001
+      containerSecurityContext: *id002
+      resources: *id003
+  postRenderers:
+  - kustomize:
+      patches:
+      - target:
+          kind: ServiceAccount
+        patch: "$patch: delete\napiVersion: v1\nkind: ServiceAccount\nmetadata:\n\
+          \  name: unused\n"
+      - target:
+          kind: Role
+        patch: "$patch: delete\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\n\
+          metadata:\n  name: unused\n"
+      - target:
+          kind: RoleBinding
+        patch: "$patch: delete\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\n\
+          metadata:\n  name: unused\n"
+      - target:
+          kind: ClusterRole
+        patch: "$patch: delete\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\n\
+          metadata:\n  name: unused\n"
+      - target:
+          kind: ClusterRoleBinding
+        patch: "$patch: delete\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\n\
+          metadata:\n  name: unused\n"
+      - target:
+          kind: IngressClass
+        patch: "$patch: delete\napiVersion: networking.k8s.io/v1\nkind: IngressClass\n\
+          metadata:\n  name: unused\n"
+      - target:
+          kind: MutatingWebhookConfiguration
+        patch: "$patch: delete\napiVersion: admissionregistration.k8s.io/v1\nkind:\
+          \ MutatingWebhookConfiguration\nmetadata:\n  name: unused\n"
+      - target:
+          kind: ValidatingWebhookConfiguration
+        patch: "$patch: delete\napiVersion: admissionregistration.k8s.io/v1\nkind:\
+          \ ValidatingWebhookConfiguration\nmetadata:\n  name: unused\n"

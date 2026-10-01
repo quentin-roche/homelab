@@ -66,6 +66,8 @@
               fluxSync = c.services.k3s.manifests."32-flux-sync".source.text;
               fluxNetwork = c.services.k3s.manifests."33-flux-network".source.text;
               hostSecurity = c.services.k3s.manifests."20-host-security".source.text;
+              platformEnabled = c.homelab.kubernetes.platform.enable;
+              platformNetwork = c.services.k3s.manifests."35-platform-network".source.text;
               recoveryHoldFile = c.homelab.kubernetes.recoveryHoldFile;
               k3sConditions = c.systemd.services.k3s.unitConfig.ConditionPathExists;
               credentialConditions = c.systemd.services.flux-bootstrap.unitConfig.ConditionPathExists;
@@ -86,7 +88,7 @@
               python
             ];
             text = ''
-              exec python ${../scripts/validate.py} --flux-manifest ${dependencies.flux.install} --kubernetes-schema ${dependencies.kubernetesSchema} --calico-manifest ${dependencies.calico} --runtime-inputs ${runtimeInputs} "$@"
+              exec python ${../scripts/validate.py} --flux-manifest ${dependencies.flux.install} --kubernetes-schema ${dependencies.kubernetesSchema} --calico-manifest ${dependencies.calico} --runtime-inputs ${runtimeInputs} --helm-chart traefik=${dependencies.platformCharts.traefik} --helm-chart cert-manager=${dependencies.platformCharts.cert-manager} "$@"
             '';
           };
         }

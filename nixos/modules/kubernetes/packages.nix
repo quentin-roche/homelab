@@ -23,6 +23,17 @@ in
     sha256 = "483500149ee52ce5753d75f5639101d985bb4f5e902cc05b1ba7627465d62446";
   };
 
+  platformCharts = {
+    traefik = pkgs.fetchurl {
+      url = "https://traefik.github.io/charts/traefik/traefik-41.6.1.tgz";
+      sha256 = "1e65d46bae0ba0baef460a1d82686b50f156372865a3d7d8a85b51c3855b2ef9";
+    };
+    cert-manager = pkgs.fetchurl {
+      url = "https://charts.jetstack.io/charts/cert-manager-v1.21.2.tgz";
+      sha256 = "73a56e1728edd6c99f1f31082618c3259d279a76b7ebd3d4bdc5475c2442d34a";
+    };
+  };
+
   render =
     {
       name,

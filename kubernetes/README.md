@@ -11,7 +11,7 @@ is host/K3s → Calico and essential policies → Kata-backed Flux → applicati
 See the [runtime guide](../nixos/modules/kubernetes/README.md) for the component modules
 and their responsibilities. Helm is available for additional services and apps.
 
-The entry point starts empty. Add reusable definitions under `apps/` and
+The entry point selects Traefik and cert-manager. Add reusable definitions under `apps/` and
 additional services under `infrastructure/`, then select them in the entry point:
 
 ```yaml

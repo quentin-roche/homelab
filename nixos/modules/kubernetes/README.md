@@ -14,6 +14,7 @@ Each module has a clear purpose:
 | `kata.nix` | Kata package, KVM prerequisites and containerd integration |
 | `calico.nix` | Calico installation, host policies and firewall guard |
 | `flux.nix` | Flux controllers, scoped access and external credential provisioning |
+| `platform.nix` | Traefik/cert-manager CRDs, RBAC, service accounts, webhooks and network access |
 | `flux/sync.nix` | Root GitRepository and application Kustomization |
 | `packages.nix` | Pinned upstream manifests, validation schema and shared Kustomize builder |
 
@@ -64,7 +65,7 @@ rendered with Kustomize.
 Application updates need Git reconciliation, not a NixOS rebuild. Do not add
 application resources to `services.k3s.manifests` or give Flux ownership of the
 runtime. See [application management](../../../kubernetes/README.md) for permissions,
-secret provisioning and the single, initially empty cluster entry point.
+secret provisioning and the single cluster entry point.
 
 ## Isolation
 

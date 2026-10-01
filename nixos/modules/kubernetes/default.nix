@@ -6,6 +6,7 @@
     ./kata.nix
     ./calico.nix
     ./flux.nix
+    ./platform.nix
   ];
   options.homelab.kubernetes = {
     enable = lib.mkEnableOption "K3s with Kata VM isolation and Calico policy";
