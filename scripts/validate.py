@@ -11,6 +11,7 @@ from pathlib import Path
 
 import jsonschema
 import yaml
+import importlib.util
 
 
 def require(condition, message):
@@ -81,6 +82,20 @@ def main():
         '483500149ee52ce5753d75f5639101d985bb4f5e902cc05b1ba7627465d62446', 'Kubernetes schema checksum changed')
 
     inputs = json.loads(args.runtime_inputs.read_text())
+    platform = []
+    if inputs.get('platformEnabled'):
+        helper = importlib.util.spec_from_file_location('platform_security', repo / 'scripts/render_platform_security.py')
+        module = importlib.util.module_from_spec(helper)
+        helper.loader.exec_module(module)
+        for release, digest in {
+            'traefik': '1e65d46bae0ba0baef460a1d82686b50f156372865a3d7d8a85b51c3855b2ef9',
+            'cert-manager': '73a56e1728edd6c99f1f31082618c3259d279a76b7ebd3d4bdc5475c2442d34a',
+        }.items():
+            require(release in charts, f'Missing pinned platform chart: {release}')
+            require(hashlib.sha256(Path(charts[release]).read_bytes()).hexdigest() == digest,
+                    f'{release} chart checksum changed')
+            platform += module.render_security(repo / 'kubernetes/infrastructure' / release / 'release.yaml', charts[release])
+        platform += load(inputs['platformNetwork'])
     require(inputs['assertions'] and not inputs['mutableUsers'], 'NixOS assertions/account settings failed')
     require(inputs['ssh']['AuthenticationMethods'] == 'publickey' and
         not inputs['ssh']['PasswordAuthentication'] and not inputs['ssh']['KbdInteractiveAuthentication'] and
@@ -102,7 +117,7 @@ def main():
         for gvk in definition.get('x-kubernetes-group-version-kind', []):
             api = f"{gvk['group']}/{gvk['version']}" if gvk['group'] else gvk['version']
             schemas[(api, gvk['kind'])] = definition
-    for obj in load(args.flux_manifest.read_text()) + load(args.calico_manifest.read_text()):
+    for obj in load(args.flux_manifest.read_text()) + load(args.calico_manifest.read_text()) + platform:
         if obj['kind'] == 'CustomResourceDefinition':
             spec = obj['spec']
             for v in spec['versions']:
@@ -151,6 +166,8 @@ def main():
             require(obj['rules'] == [{'nonResourceURLs': ['/livez/ping'], 'verbs': ['head']}], 'Unexpected cluster-wide Flux permissions')
         if obj['kind'] == 'ClusterRoleBinding':
             require(obj['roleRef']['name'] == 'flux-api-health', 'Unexpected cluster-wide role binding')
+    if inputs.get('platformEnabled'):
+        rbac += load((repo / 'nixos/modules/kubernetes/platform/reconciler.yaml').read_text())
     roles = {(x['metadata']['namespace'], x['metadata']['name']): x['rules'] for x in rbac if x['kind'] == 'Role'}
     bindings = [x for x in rbac if x['kind'] == 'RoleBinding']
     for obj in bindings:
@@ -182,7 +199,7 @@ def main():
         require(k not in owned, f'Duplicate resource ownership: {k} ({owned.get(k)} and {owner})')
         owned[k] = owner
         resources.append(obj)
-    for obj in calico + runtime + rbac + load(inputs['hostSecurity']) + load((repo / 'nixos/modules/kubernetes/workload-security.yaml').read_text()):
+    for obj in calico + runtime + rbac + platform + load(inputs['hostSecurity']) + load((repo / 'nixos/modules/kubernetes/workload-security.yaml').read_text()):
         own(obj, 'Nix')
     seed = json.loads(inputs['fluxSync'])['items']
     for obj in seed:
@@ -208,7 +225,7 @@ def main():
             continue
         hs = obj['spec']
         chart = hs['chart']['spec']
-        require(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?', chart['version']),
+        require(re.fullmatch(r'v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?', chart['version']),
             'Helm chart must have an exact version')
         ns = hs['targetNamespace']
         require(ns in ['applications', 'platform-services'] and hs['storageNamespace'] == ns,

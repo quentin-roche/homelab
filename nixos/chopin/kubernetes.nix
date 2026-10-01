@@ -4,6 +4,7 @@
   imports = [ ../modules/kubernetes ];
   homelab.kubernetes = {
     enable = true;
+    platform.enable = true;
     flux = {
       enable = true;
       repository = "https://github.com/quentin-roche/homelab.git";

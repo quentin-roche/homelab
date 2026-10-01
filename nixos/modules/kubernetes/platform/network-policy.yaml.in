@@ -1,0 +1,227 @@
+# LAN ingress only; backend pods opt in with homelab/ingress: "true".
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: platform-runtime-access
+  labels:
+    homelab/owner: nix
+spec:
+  order: 70
+  selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+    in {'traefik', 'cert-manager', 'cert-manager-webhook', 'cert-manager-cainjector'}
+  types:
+  - Ingress
+  - Egress
+  ingress:
+  - action: Allow
+    protocol: TCP
+    source:
+      nets:
+      - '@NODE_IP@/32'
+    destination:
+      ports:
+      - 9000
+      - 9402
+      - 10250
+      - 6080
+  - action: Allow
+    protocol: TCP
+    source:
+      nets:
+      - '@LAN_CIDR@'
+    destination:
+      selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+        == 'traefik'
+      ports:
+      - 8000
+      - 8443
+  - action: Allow
+    protocol: TCP
+    source:
+      selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+        == 'traefik'
+    destination:
+      selector: projectcalico.org/namespace in {'applications', 'platform-services'}
+        && homelab/ingress == 'true'
+  - action: Allow
+    protocol: TCP
+    source:
+      selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+        in {'traefik', 'cert-manager', 'cert-manager-webhook', 'cert-manager-cainjector'}
+    destination:
+      selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+        == 'cert-manager-webhook'
+      ports:
+      - 10250
+  egress:
+  - action: Allow
+    protocol: TCP
+    destination:
+      nets:
+      - '@NODE_IP@/32'
+      ports:
+      - 6443
+  - action: Allow
+    protocol: TCP
+    destination:
+      nets:
+      - '@API_IP@/32'
+      ports:
+      - 443
+  - action: Allow
+    protocol: TCP
+    source:
+      selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+        == 'traefik'
+    destination:
+      selector: projectcalico.org/namespace in {'applications', 'platform-services'}
+        && homelab/ingress == 'true'
+  - action: Allow
+    protocol: TCP
+    destination:
+      selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+        == 'cert-manager-webhook'
+      ports:
+      - 10250
+  - action: Allow
+    protocol: TCP
+    source:
+      selector: homelab/controller == 'cert-manager'
+    destination:
+      nets:
+      - 0.0.0.0/0
+      notNets:
+      - 0.0.0.0/8
+      - 10.0.0.0/8
+      - 100.64.0.0/10
+      - 127.0.0.0/8
+      - 169.254.0.0/16
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 224.0.0.0/4
+      - 240.0.0.0/4
+      - '@NODE_IP@/32'
+      - '@POD_CIDR@'
+      - '@SERVICE_CIDR@'
+      - '@LAN_CIDR@'
+      ports:
+      - 443
+  - action: Allow
+    protocol: UDP
+    source:
+      selector: homelab/controller == 'cert-manager'
+    destination:
+      nets:
+      - 0.0.0.0/0
+      notNets:
+      - 0.0.0.0/8
+      - 10.0.0.0/8
+      - 100.64.0.0/10
+      - 127.0.0.0/8
+      - 169.254.0.0/16
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 224.0.0.0/4
+      - 240.0.0.0/4
+      - '@NODE_IP@/32'
+      - '@POD_CIDR@'
+      - '@SERVICE_CIDR@'
+      - '@LAN_CIDR@'
+      ports:
+      - 53
+  - action: Allow
+    protocol: TCP
+    source:
+      selector: homelab/controller == 'cert-manager'
+    destination:
+      nets:
+      - 0.0.0.0/0
+      notNets:
+      - 0.0.0.0/8
+      - 10.0.0.0/8
+      - 100.64.0.0/10
+      - 127.0.0.0/8
+      - 169.254.0.0/16
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 224.0.0.0/4
+      - 240.0.0.0/4
+      - '@NODE_IP@/32'
+      - '@POD_CIDR@'
+      - '@SERVICE_CIDR@'
+      - '@LAN_CIDR@'
+      ports:
+      - 53
+---
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: ingress-backends
+  labels:
+    homelab/owner: nix
+spec:
+  order: 71
+  selector: projectcalico.org/namespace in {'applications', 'platform-services'} &&
+    homelab/ingress == 'true'
+  types:
+  - Ingress
+  ingress:
+  - action: Allow
+    protocol: TCP
+    source:
+      selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+        == 'traefik'
+    destination:
+      selector: projectcalico.org/namespace in {'applications', 'platform-services'}
+        && homelab/ingress == 'true'
+---
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: platform-host-api
+  labels:
+    homelab/owner: nix
+spec:
+  order: 69
+  selector: homelab/host == '@NODE_NAME@'
+  types:
+  - Ingress
+  ingress:
+  - action: Allow
+    protocol: TCP
+    source:
+      selector: projectcalico.org/namespace == 'platform-services' && homelab/controller
+        in {'traefik', 'cert-manager', 'cert-manager-webhook', 'cert-manager-cainjector'}
+    destination:
+      ports:
+      - 6443
+---
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: traefik-nodeports
+  labels:
+    homelab/owner: nix
+spec:
+  order: 68
+  selector: homelab/host == '@NODE_NAME@'
+  preDNAT: true
+  applyOnForward: true
+  types:
+  - Ingress
+  ingress:
+  - action: Allow
+    protocol: TCP
+    source:
+      nets:
+      - '@LAN_CIDR@'
+    destination:
+      ports:
+      - 30080
+      - 30443
+  - action: Deny
+    protocol: TCP
+    destination:
+      ports:
+      - 30080
+      - 30443

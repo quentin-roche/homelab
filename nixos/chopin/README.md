@@ -19,6 +19,10 @@ loopback. Kubernetes administration goes through SSH.
 | `kubernetes.nix` | Host settings for the [shared cluster module](../modules/kubernetes/README.md) |
 
 The Samsung 970 EVO SSD is selected by its persistent model/serial device ID.
+The Disko disk name `system` preserves the installed partition labels
+`disk-system-ESP` and `disk-system-zfs`. Check the EFI device and `/boot` mount
+before switching a configuration; changing that logical disk name changes the
+generated mount path even when the physical disk is the same.
 The single-disk pool `zroot` uses `ashift=12`; `zroot/nixos` mounts at `/` and
 contains the Nix store, K3s state, and local-path PVC data. Dataset properties
 are LZ4 compression, 128 KiB records, system attributes, POSIX ACLs, relative
@@ -37,6 +41,8 @@ There is no `rocheque` account or sudo requirement.
 ssh -i ~/.ssh/personal -o IdentitiesOnly=yes root@192.168.1.167
 # On Chopin, with the repository checked out:
 cd /root/homelab
+test -b /dev/disk/by-partlabel/disk-system-ESP
+findmnt /boot
 nixos-rebuild build --flake "$PWD/nixos#chopin"
 nixos-rebuild switch --flake "$PWD/nixos#chopin"
 k3s kubectl get nodes
@@ -65,6 +71,16 @@ reorganization. The adapted configuration preserves that deployment's disk,
 access, and network settings alongside the Flux bootstrap already on `main`.
 Flux credentials and live reconciliation still require their own verification.
 
+On 2026-10-02, the Flux, Traefik and cert-manager configuration was successfully
+test-activated after correcting the repository's Disko disk name to preserve the
+installed `disk-system-*` partition labels. SSH access over the administrator
+Mac's Wi-Fi, the mounted EFI device, ZFS health, K3s readiness and Flux
+reconciliation were verified. All seven Flux/platform controller pods were Ready
+with `kata-qemu`. A temporary isolated backend returned HTTP and HTTPS 200,
+including TLS verification using a cert-manager-issued test certificate. The
+test resources were removed. The corrected configuration is the persistent boot
+default; a reboot into that new default has not yet been exercised.
+
 ## Install from scratch
 
 This procedure erases the selected disk. For the live machine, first confirm a
@@ -91,7 +107,7 @@ the system without formatting):
 ```sh
 sudo nix --extra-experimental-features 'nix-command flakes' \
   run "$PWD/nixos#disko-install" -- --dry-run \
-  --flake "$PWD/nixos#chopin" --disk main /dev/disk/by-id/<target-disk-id> \
+  --flake "$PWD/nixos#chopin" --disk system /dev/disk/by-id/<target-disk-id> \
   --write-efi-boot-entries
 ```
 
