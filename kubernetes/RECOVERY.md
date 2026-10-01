@@ -31,7 +31,7 @@ schedule has been configured by this repo cleanup.
 
 The personal key was enrolled and a fresh key-only administrative connection
 verified on 2026-10-01. Before any later migration, confirm a **new** key-only SSH
-session and validate sudo privileges. Follow the [migration steps](../nixos/chopin/README.md).
+root session. Follow the [access checks](../nixos/chopin/README.md).
 Do not rely on an already-open password-authenticated session. If access is
 lost, use the NixOS installer/console to mount and repair the existing system.
 
@@ -62,10 +62,10 @@ suspension alone is not a workload stop.
 
 ## 2. Reinstall NixOS and restore state before startup when required
 
-The Disko installer recreates the declared GPT, EFI/ext4 filesystems, and
-original UUIDs, then installs the pinned host closure. A normal rebuild does
-not partition disks. Do not attach the old disk with identical UUIDs to the
-new installation. Preserve/restore SSH host keys only from trusted backups.
+The Disko installer creates the declared GPT, EFI filesystem, ZFS pool, and
+root dataset, then installs the pinned host closure. A normal rebuild does
+not partition disks. Do not import two pools named `zroot` together.
+Preserve/restore SSH host keys only from trusted backups.
 
 For a full datastore restore, create a recovery marker on the live installer:
 
@@ -97,20 +97,20 @@ For a full datastore recovery, remove only the recovery marker after all
 matched data is restored:
 
 ```sh
-sudo rm /var/lib/homelab/restore-in-progress
-sudo systemctl start k3s
+rm /var/lib/homelab/restore-in-progress
+systemctl start k3s
 ```
 
 For a fresh install without the marker, K3s starts automatically. Verify at the
 console or through a newly authenticated SSH connection:
 
 ```sh
-sudo k3s kubectl get nodes
-sudo k3s kubectl get pods -n kube-system
-sudo k3s kubectl get runtimeclass kata-qemu
-sudo k3s kubectl get globalnetworkpolicies.crd.projectcalico.org
-sudo systemctl status k3s homelab-network-guard
-sudo nft list table inet homelab_guard
+k3s kubectl get nodes
+k3s kubectl get pods -n kube-system
+k3s kubectl get runtimeclass kata-qemu
+k3s kubectl get globalnetworkpolicies.crd.projectcalico.org
+systemctl status k3s homelab-network-guard
+nft list table inet homelab_guard
 ```
 
 Calico, the firewall guard, admission rules, and namespaces must be healthy.
@@ -127,10 +127,10 @@ files at the selected Git revision. Restore optional private Git token files
 separately, plus credentials for external data/services. Run:
 
 ```sh
-sudo systemctl restart flux-bootstrap
-sudo systemctl status flux-bootstrap
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux check
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get sources all
+systemctl restart flux-bootstrap
+systemctl status flux-bootstrap
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux check
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get sources all
 ```
 
 Nix already installed the pinned Flux controllers and root objects. The helper
@@ -150,12 +150,12 @@ recovery Git overlay; a root suspension does not stop existing Pods or prevent
 independent Helm reconciliation.
 
 ```sh
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux reconcile source git homelab
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux reconcile kustomization cluster --with-source
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get kustomizations
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get helmreleases
-sudo k3s kubectl get pods -n applications
-sudo k3s kubectl get pvc,pv -A
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux reconcile source git homelab
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux reconcile kustomization cluster --with-source
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get kustomizations
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get helmreleases
+k3s kubectl get pods -n applications
+k3s kubectl get pvc,pv -A
 ```
 
 One root Kustomization reconciles the selected applications and services. Check

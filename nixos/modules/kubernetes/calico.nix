@@ -19,9 +19,10 @@ let
     {
       name = "node.yaml";
       path = pkgs.writeText "calico-node.yaml" (
-        lib.replaceStrings [ "@INTERFACE@" "@POD_CIDR@" ] [ cfg.interface cfg.podCIDR ] (
-          builtins.readFile ./calico/node.yaml.in
-        )
+        lib.replaceStrings
+          [ "@INTERFACE@" "@POD_CIDR@" "@NODE_IP@" ]
+          [ cfg.interface cfg.podCIDR cfg.nodeIP ]
+          (builtins.readFile ./calico/node.yaml.in)
       );
     }
   ];

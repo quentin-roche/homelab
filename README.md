@@ -2,7 +2,7 @@
 
 Declarative NixOS hosts, with dependencies pinned in `nixos/flake.lock`.
 
-- [`nixos/chopin/`](nixos/chopin/README.md): hardware, disks, static networking, key-only
+- [`nixos/chopin/`](nixos/chopin/README.md): hardware, ZFS disks, DHCP management, key-only
   administrator access, and reinstall/recovery instructions.
 - [`nixos/modules/kubernetes/`](nixos/modules/kubernetes/README.md): reusable K3s, Calico,
   Kata VM isolation, security policies, and Nix-owned Flux bootstrap.
