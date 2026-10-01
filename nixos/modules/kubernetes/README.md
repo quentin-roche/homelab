@@ -18,7 +18,7 @@ Each module has a clear purpose:
 | `packages.nix` | Pinned upstream manifests, validation schema and shared Kustomize builder |
 
 The `calico/` and `flux/` folders contain their YAML overlays. Host settings belong
-under `chopin/`; application definitions belong under `kubernetes/`.
+under `nixos/chopin/`; application definitions belong under `kubernetes/`.
 
 ## Reuse on another host
 
@@ -40,7 +40,8 @@ KVM. Import it and supply the host's network identity:
 }
 ```
 
-External flakes can import `homelab.nixosModules.kubernetes`. Configure disks,
+External flakes use `github:quentin-roche/homelab?dir=nixos` and import
+`homelab.nixosModules.kubernetes`. Configure disks,
 static networking, SSH users and `kvm-amd` or `kvm-intel` in the host module.
 [Chopin](../../chopin/README.md) shows the complete setup, including Flux.
 Joining nodes into one cluster additionally requires credentials, routing and
@@ -57,12 +58,12 @@ Calico pool initialization values do not rewrite existing pools.
 4. Flux reconciles the cluster entry point in Git, using Kustomize or Helm for
    selected applications and services.
 
-K3s/Nixpkgs are locked in `flake.lock`. Calico 3.32.2 and Flux 2.9.5 are pinned
+K3s/Nixpkgs are locked in `nixos/flake.lock`. Calico 3.32.2 and Flux 2.9.5 are pinned
 in `packages.nix`; Kata 4.2.0 is pinned in `kata.nix`. Calico and Flux are
 rendered with Kustomize.
 Application updates need Git reconciliation, not a NixOS rebuild. Do not add
 application resources to `services.k3s.manifests` or give Flux ownership of the
-runtime. See [application management](../../kubernetes/README.md) for permissions,
+runtime. See [application management](../../../kubernetes/README.md) for permissions,
 secret provisioning and the single, initially empty cluster entry point.
 
 ## Isolation
@@ -125,7 +126,7 @@ those live behaviors.
 Git restores configuration. Back up the K3s datastore/server token, external
 credentials and application data separately to protected off-machine storage.
 Stopping K3s alone may leave application VMs running: quiesce them or use
-consistent storage snapshots. Follow the [recovery runbook](../../kubernetes/RECOVERY.md)
+consistent storage snapshots. Follow the [recovery runbook](../../../kubernetes/RECOVERY.md)
 and [host guide](../../chopin/README.md) for a held startup, reinstall and restoration.
 No off-host backup destination is configured. No Headscale/Tailscale component
 is declared here; inspect additional live services before a migration.

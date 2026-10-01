@@ -15,6 +15,7 @@
       ...
     }:
     let
+      repoRoot = ../.;
       libOptionalInstaller =
         system:
         nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
@@ -70,7 +71,7 @@
               python
             ];
             text = ''
-              exec python ${./scripts/validate.py} --flux-manifest ${dependencies.flux.install} --kubernetes-schema ${dependencies.kubernetesSchema} --calico-manifest ${dependencies.calico} --runtime-inputs ${runtimeInputs} "$@"
+              exec python ${../scripts/validate.py} --flux-manifest ${dependencies.flux.install} --kubernetes-schema ${dependencies.kubernetesSchema} --calico-manifest ${dependencies.calico} --runtime-inputs ${runtimeInputs} "$@"
             '';
           };
         }
@@ -102,11 +103,11 @@
       checks.aarch64-darwin.gitops =
         nixpkgs.legacyPackages.aarch64-darwin.runCommand "check-gitops" { }
           ''
-            ${self.packages.aarch64-darwin.validate}/bin/validate-homelab --repo ${self}
+            ${self.packages.aarch64-darwin.validate}/bin/validate-homelab --repo ${repoRoot}
             touch "$out"
           '';
       checks.x86_64-linux.gitops = nixpkgs.legacyPackages.x86_64-linux.runCommand "check-gitops" { } ''
-        ${self.packages.x86_64-linux.validate}/bin/validate-homelab --repo ${self}
+        ${self.packages.x86_64-linux.validate}/bin/validate-homelab --repo ${repoRoot}
         touch "$out"
       '';
       formatter = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-darwin" ] (

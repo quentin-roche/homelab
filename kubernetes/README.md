@@ -8,7 +8,7 @@ Applications change after Git reconciliation, without rebuilding NixOS.
 
 Calico and Kata stay in Nix because Flux uses them to start. The startup order
 is host/K3s → Calico and essential policies → Kata-backed Flux → applications.
-See the [runtime guide](../modules/kubernetes/README.md) for the component modules
+See the [runtime guide](../nixos/modules/kubernetes/README.md) for the component modules
 and their responsibilities. Helm is available for additional services and apps.
 
 The entry point starts empty. Add reusable definitions under `apps/` and
@@ -106,11 +106,11 @@ sudo k3s kubectl get pods -A
 From a reviewed checkout using Git-filtered Nix sources:
 
 ```sh
-nix flake check --all-systems --no-build
-nix run .#validate -- --repo "$PWD"
-nix build .#checks.aarch64-darwin.gitops  # Apple Silicon
-# Linux: nix build .#checks.x86_64-linux.chopin .#checks.x86_64-linux.gitops
-nix develop --command shellcheck scripts/provision-flux-credentials.sh
+nix flake check --all-systems --no-build ./nixos
+nix run ./nixos#validate -- --repo "$PWD"
+nix build ./nixos#checks.aarch64-darwin.gitops  # Apple Silicon
+# Linux: nix build ./nixos#checks.x86_64-linux.chopin ./nixos#checks.x86_64-linux.gitops
+nix develop ./nixos --command shellcheck scripts/provision-flux-credentials.sh
 ```
 
 Validation renders Kustomize and checks pinned schemas, ownership, scoped RBAC,
@@ -122,4 +122,4 @@ validated too. Empty configuration is valid.
 
 Live checks remain necessary for traffic, admission, guest startup and production
 decryption. Git recovers configuration, not persistent data. Follow the
-[recovery runbook](RECOVERY.md) and [host guide](../chopin/README.md).
+[recovery runbook](RECOVERY.md) and [host guide](../nixos/chopin/README.md).

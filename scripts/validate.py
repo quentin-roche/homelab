@@ -120,7 +120,7 @@ def main():
             shutil.copyfile(upstream, td / 'upstream.yaml')
             return load(run('kustomize', 'build', str(td)))
 
-    runtime = overlay(repo / 'modules/kubernetes/flux', args.flux_manifest)
+    runtime = overlay(repo / 'nixos/modules/kubernetes/flux', args.flux_manifest)
     runtime += load(inputs['fluxNetwork'])
     marker = '!' + inputs['recoveryHoldFile']
     require(inputs['k3sConditions'] == marker and marker in inputs['credentialConditions'],
@@ -140,12 +140,12 @@ def main():
     require(len(https) == 1 and https[0]['source']['selector'] == "app == 'source-controller'" and
         https[0]['destination']['ports'] == [443] and '192.168.0.0/16' in https[0]['destination']['notNets'], 'Excessive Flux Internet/LAN egress')
 
-    calico = overlay(repo / 'modules/kubernetes/calico', args.calico_manifest,
+    calico = overlay(repo / 'nixos/modules/kubernetes/calico', args.calico_manifest,
         {'@INTERFACE@': inputs['interface'], '@POD_CIDR@': inputs['podCIDR']})
     cm = next(o for o in calico if o['kind'] == 'ConfigMap' and o['metadata']['name'] == 'calico-config')
     cni = json.loads(cm['data']['cni_network_config'].replace('__CNI_MTU__', '0'))
     require(next(p for p in cni['plugins'] if p['type'] == 'calico')['policy_setup_timeout_seconds'] == 30, 'CNI fails open during policy setup')
-    rbac = load((repo / 'modules/kubernetes/flux/rbac.yaml').read_text())
+    rbac = load((repo / 'nixos/modules/kubernetes/flux/rbac.yaml').read_text())
     for obj in rbac:
         if obj['kind'] == 'ClusterRole':
             require(obj['rules'] == [{'nonResourceURLs': ['/livez/ping'], 'verbs': ['head']}], 'Unexpected cluster-wide Flux permissions')
@@ -182,7 +182,7 @@ def main():
         require(k not in owned, f'Duplicate resource ownership: {k} ({owned.get(k)} and {owner})')
         owned[k] = owner
         resources.append(obj)
-    for obj in calico + runtime + rbac + load(inputs['hostSecurity']) + load((repo / 'modules/kubernetes/workload-security.yaml').read_text()):
+    for obj in calico + runtime + rbac + load(inputs['hostSecurity']) + load((repo / 'nixos/modules/kubernetes/workload-security.yaml').read_text()):
         own(obj, 'Nix')
     seed = json.loads(inputs['fluxSync'])['items']
     for obj in seed:

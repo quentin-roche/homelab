@@ -9,7 +9,7 @@ protected backups. Git, Flux, and SOPS do not back up those data.
 
 | Material | Where it belongs | Recovery requirement |
 | --- | --- | --- |
-| Administrator SSH private key | Administrator computer/protected backup, never Git | Matches the public key in `chopin/keys/quentin.pub` |
+| Administrator SSH private key | Administrator computer/protected backup, never Git | Matches the public key in `nixos/chopin/keys/quentin.pub` |
 | age private identity | Protected backup; root-only `/var/lib/flux/age/keys.txt` on Chopin | Must decrypt secrets at the selected Git/backup revision |
 | Public age recipient and encrypted Secrets | Git | Recipient goes in `.sops.yaml`; no plaintext values |
 | Git credentials | None for current public HTTPS; external read-only token files if private | Restore separately and configure the Nix credential-directory string |
@@ -22,7 +22,7 @@ Quiesce writers and make application-native database backups. Stopping K3s alone
 can leave containers/VMs writing. Take a consistent backup of
 `/var/lib/rancher/k3s/server` and `/var/lib/rancher/k3s/storage` together, with
 ownership/modes intact. Back up any storage outside these paths separately.
-Record the Git revision, `flake.lock`, K3s/Flux versions, volume paths, restore
+Record the Git revision, `nixos/flake.lock`, K3s/Flux versions, volume paths, restore
 commands, and external dependencies alongside the encrypted backup. Keep copies
 off Chopin and test restore regularly. No off-machine destination or retention
 schedule has been configured by this repo cleanup.
@@ -31,7 +31,7 @@ schedule has been configured by this repo cleanup.
 
 The personal key was enrolled and a fresh key-only administrative connection
 verified on 2026-10-01. Before any later migration, confirm a **new** key-only SSH
-session and validate sudo privileges. Follow the [migration steps](../chopin/README.md).
+session and validate sudo privileges. Follow the [migration steps](../nixos/chopin/README.md).
 Do not rely on an already-open password-authenticated session. If access is
 lost, use the NixOS installer/console to mount and repair the existing system.
 
@@ -39,7 +39,7 @@ Do not format/reinstall the live machine or switch it to key-only SSH until a
 fresh key-authenticated administrative connection has succeeded. Nothing in
 this cleanup runs disk formatting, reinstall, or live activation.
 A destructive reinstall needs an explicitly selected target disk and saved
-backups. Use the [host installation procedure](../chopin/README.md), at the
+backups. Use the [host installation procedure](../nixos/chopin/README.md), at the
 reviewed configuration revision, only when reinstalling is actually intended.
 
 Choose one of these data paths before installing:
@@ -52,7 +52,7 @@ Choose one of these data paths before installing:
   created the backup. Upgrade only after a successful restore.
 
 For a stateful recovery, set `homelab.kubernetes.flux.suspend = true;` in the
-recovery checkout's `chopin/kubernetes.nix` **before** installing. This is a
+recovery checkout's `nixos/chopin/kubernetes.nix` **before** installing. This is a
 Nix-owned root flag; keep it suspended until data is ready. Set `flux.revision`
 to the exact reviewed Git commit if recovery must not follow new `main` changes.
 Do not write a real secret into the recovery checkout. Existing Pods and

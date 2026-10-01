@@ -119,7 +119,7 @@ in
         pkgs.jq
       ];
       script = ''
-        exec ${pkgs.bash}/bin/bash ${../../scripts/provision-flux-credentials.sh} ${lib.escapeShellArg cfg.ageIdentityFile} ${
+        exec ${pkgs.bash}/bin/bash ${../../../scripts/provision-flux-credentials.sh} ${lib.escapeShellArg cfg.ageIdentityFile} ${
           lib.optionalString (cfg.gitCredentialDirectory != null) (
             lib.escapeShellArg cfg.gitCredentialDirectory
           )

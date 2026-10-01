@@ -52,8 +52,8 @@ and `sudo -n true` to confirm administrative access before proceeding. On Chopin
 
 ```sh
 cd /home/rocheque/homelab
-sudo nixos-rebuild build --flake "$PWD#chopin"
-sudo nixos-rebuild test --flake "$PWD#chopin"
+sudo nixos-rebuild build --flake "$PWD/nixos#chopin"
+sudo nixos-rebuild test --flake "$PWD/nixos#chopin"
 ```
 
 From a second terminal, verify a fresh SSH login and `sudo -n true`, then inspect
@@ -61,7 +61,7 @@ From a second terminal, verify a fresh SSH login and `sudo -n true`, then inspec
 make it the boot default:
 
 ```sh
-sudo nixos-rebuild switch --flake "$PWD#chopin"
+sudo nixos-rebuild switch --flake "$PWD/nixos#chopin"
 sudo k3s kubectl get nodes
 sudo systemctl status k3s homelab-network-guard
 ```
@@ -79,7 +79,7 @@ NixOS x86_64 installer in UEFI mode on Chopin and connect it to the LAN/internet
 The private administrator key is not needed on the installer.
 
 ```sh
-# Get a reviewed revision, including its committed flake.lock.
+# Get a reviewed revision, including its committed nixos/flake.lock.
 nix-shell -p git
 git clone https://github.com/quentin-roche/homelab.git
 cd homelab
@@ -95,8 +95,8 @@ an explicit disk selection. First preview (builds the system without formatting)
 
 ```sh
 sudo nix --extra-experimental-features 'nix-command flakes' \
-  run "$PWD#disko-install" -- --dry-run \
-  --flake "$PWD#chopin" --disk main /dev/disk/by-id/<target-disk-id> \
+  run "$PWD/nixos#disko-install" -- --dry-run \
+  --flake "$PWD/nixos#chopin" --disk main /dev/disk/by-id/<target-disk-id> \
   --write-efi-boot-entries
 ```
 
@@ -128,7 +128,7 @@ from this configuration.
 After the runtime is healthy, provision the externally backed-up age identity,
 start `flux-bootstrap`, then reconcile the Git source/root. Applications and
 additional services are Flux-owned, not K3s Nix manifests. Follow the complete
-[recovery runbook](../kubernetes/RECOVERY.md), which separates configuration
+[recovery runbook](../../kubernetes/RECOVERY.md), which separates configuration
 recovery from cluster datastore and persistent-data recovery. Do not start
 stateful writers before their data and volume identities are restored.
 
