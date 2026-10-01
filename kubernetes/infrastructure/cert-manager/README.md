@@ -8,7 +8,8 @@ and Helm skips CRD installation/upgrades. Update the chart pin and checksum
 in `packages.nix` together with `release.yaml`, rebuild NixOS prerequisites,
 then reconcile Flux. Uninstalling the workload release retains the CRDs.
 
-No production Issuer is selected without a domain and certificate authority.
+Let's Encrypt is the selected provider, but no production Issuer is configured
+until a domain and DNS provider are available.
 For Let's Encrypt, DNS-01 suits this LAN-only cluster: the controller may reach
 public HTTPS and DNS, but private/LAN destinations are excluded. DNS API tokens
 belong in SOPS-encrypted application Secrets. Set the public age recipient in

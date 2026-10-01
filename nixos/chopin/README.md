@@ -71,6 +71,16 @@ reorganization. The adapted configuration preserves that deployment's disk,
 access, and network settings alongside the Flux bootstrap already on `main`.
 Flux credentials and live reconciliation still require their own verification.
 
+On 2026-10-02, the Flux, Traefik and cert-manager configuration was successfully
+test-activated after correcting the repository's Disko disk name to preserve the
+installed `disk-system-*` partition labels. SSH access over the administrator
+Mac's Wi-Fi, the mounted EFI device, ZFS health, K3s readiness and Flux
+reconciliation were verified. All seven Flux/platform controller pods were Ready
+with `kata-qemu`. A temporary isolated backend returned HTTP and HTTPS 200,
+including TLS verification using a cert-manager-issued test certificate. The
+test resources were removed. The corrected configuration is the persistent boot
+default; a reboot into that new default has not yet been exercised.
+
 ## Install from scratch
 
 This procedure erases the selected disk. For the live machine, first confirm a
