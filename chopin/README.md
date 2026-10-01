@@ -1,163 +1,161 @@
-# Chopin: Kubernetes, Kata, and Calico
+# Chopin
 
-Chopin (`192.168.1.82`, SSH user `rocheque`) runs a single-node K3s cluster
-called `chopin`. The existing NixOS installation, accounts, disk layout, and
-SSH authentication are preserved. The OS hostname remains `nixos`.
+NixOS on AMD x86_64 hardware, UEFI/systemd-boot, ext4 root, no swap.
+Hostname `chopin`, interface `enp1s0f1`, address `192.168.1.82/24`, gateway/DNS
+`192.168.1.254`. Reserve this address outside the router's DHCP pool.
 
-## What is enforced
+| File | Responsibility |
+| --- | --- |
+| `configuration.nix` | Host composition, locale, bootloader, state compatibility |
+| `hardware-configuration.nix` | Hardware drivers and AMD microcode |
+| `disk-config.nix` | GPT, 1 GiB EFI partition, ext4 root using the remaining disk |
+| `networking.nix` | Static address and systemd-networkd; no saved NetworkManager profile |
+| `access.nix` / `keys/quentin.pub` | Immutable accounts, public key, SSH and sudo |
+| `kubernetes.nix` | Host settings for the [shared cluster module](../modules/kubernetes/README.md) |
 
-- K3s comes from the locked Nixpkgs input; deployed version: `v1.35.8+k3s1`.
-- Kata 4.2.0's checksum-pinned static Rust runtime runs QEMU with KVM. Each
-  application **pod** has its own VM; containers in the same pod share that VM.
-- Calico Open Source 3.32.2 enforces policy on the host, outside the guest.
-  Pod addresses are `10.42.0.0/16`; service addresses are `10.43.0.0/16`.
-  Flannel and K3s's network-policy controller are disabled.
-- All application namespaces, including newly created ones, have an explicit
-  final ingress/egress deny policy. The only default application egress is
-  TCP/UDP DNS to CoreDNS. Internet, LAN, other pods, the node, and Kubernetes
-  API access require explicit allow rules.
-- Admission requires `runtimeClassName: kata-qemu` outside the infrastructure
-  namespaces. It rejects host namespaces, host paths, host ports, privileged
-  containers, device requests, extra networks, IP spoofing annotations, and
-  Kata configuration overrides. `applications` and `default` also enforce
-  Kubernetes's restricted Pod Security Standard.
-- A separate nftables guard starts before K3s. New pod packets must carry
-  Calico's host-side approval mark, including while Calico is starting.
-  Established/related connections retain the normal stateful behavior.
-- SSH is allowed from `192.168.1.0/24`. The Kubernetes API and kubelet are not
-  exposed to LAN clients. Infrastructure pods can reach the API and kubelet
-  only after Calico approves their traffic.
-- Chopin has a wildcard Calico HostEndpoint and an explicit host policy.
-  Host egress permits cluster traffic, the router's DNS, HTTP/HTTPS for image
-  pulls and updates, NTP, DHCP, and ICMP/ICMPv6. Application egress does **not**
-  inherit these host allowances. The node policy covers IPv4 and IPv6;
-  pod networking is IPv4 only.
-- Kubernetes Secrets encryption is enabled. Administrative kubeconfig and
-  cluster credentials remain on Chopin with root-only access.
+## Administrator access
 
-The trusted base is the host, KVM, QEMU, virtiofsd, Kata, and the Kubernetes/
-Calico administrators. VM isolation reduces the shared-kernel risk; it is
-not a guarantee against hypervisor or runtime vulnerabilities. Keep both
-the host and the bundled guest/runtime patched. System pods in `kube-system`
-use the ordinary runtime because the networking and storage components need
-host access. Never place untrusted workloads in the infrastructure namespaces
-or grant their users permission to deploy there.
+`rocheque` uses Quentin's existing personal Ed25519 key. Its private half stays
+on the administrator's computer (currently `~/.ssh/personal`); back it up in
+protected storage. Root and user password logins are locked. SSH only accepts
+public keys, denies root, and disables password and keyboard-interactive
+methods. `rocheque` can use passwordless sudo: access to this key grants full
+administrative access. There is no login password to store or recover.
 
-## Operate the cluster
+SSH host keys are generated on first boot and remain outside Git. A reinstall
+changes the server fingerprint unless `/etc/ssh/ssh_host_*` is restored from a
+protected backup. Verify the new fingerprint at the console before updating
+`known_hosts`. Losing all authorized private keys requires the recovery console
+and a rebuild with a replacement public key.
 
-On Chopin:
+## Migrate the existing installation
+
+The old installation uses hostname `nixos` and NetworkManager. Existing
+filesystem UUIDs and Kubernetes node name are retained. This change sets the
+OS hostname to `chopin`, replaces NetworkManager with a static networkd profile,
+locks password logins, and renames the network guard. Keep console access for
+the first activation, and verify the interface, gateway, and reserved address.
+
+The personal key was not accepted by the running server during the repository
+cleanup. Enroll it once using the existing login from the administrator's Mac
+(or copy the public key through Chopin's console):
+
+```sh
+ssh-copy-id -i ~/.ssh/personal.pub rocheque@192.168.1.82
+ssh -i ~/.ssh/personal -o IdentitiesOnly=yes -o PreferredAuthentications=publickey \
+  -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no rocheque@192.168.1.82
+```
+
+Enter any existing SSH/sudo password interactively; never put it in a command,
+environment file, or Git. In the new key-authenticated session, run `sudo -v`
+and `sudo -n true` to confirm administrative access before proceeding. On Chopin, with this repository checked out:
 
 ```sh
 cd /home/rocheque/homelab
-sudo nixos-rebuild switch --flake path:.#chopin
-sudo k3s kubectl get nodes
-sudo k3s kubectl get pods -A
-sudo k3s kubectl get globalnetworkpolicies.crd.projectcalico.org
-sudo systemctl status k3s chopin-network-guard
-sudo nft list table inet chopin_guard
+sudo nixos-rebuild build --flake "$PWD#chopin"
+sudo nixos-rebuild test --flake "$PWD#chopin"
 ```
 
-The `path:` flake reference includes new files during development without
-requiring them to be staged in Git. No passwords or credentials are in this
-repository. The declarative manifests are reconciled by K3s; make persistent
-changes in the Nix/YAML files, then rebuild.
-
-Try an application:
+From a second terminal, verify a fresh SSH login and `sudo -n true`, then inspect
+`networkctl status enp1s0f1`, `resolvectl status`, and the cluster. When verified,
+make it the boot default:
 
 ```sh
-sudo k3s kubectl apply -f chopin/examples/application.yaml
-sudo k3s kubectl rollout status -n applications deployment/web
-sudo k3s kubectl exec -n applications deployment/web -- uname -r
-sudo k3s kubectl port-forward -n applications service/web 8080:8080
+sudo nixos-rebuild switch --flake "$PWD#chopin"
+sudo k3s kubectl get nodes
+sudo systemctl status k3s homelab-network-guard
+sudo bash modules/kubernetes/verify-isolation.sh 192.168.1.82 192.168.1.254
 ```
 
-The last command allows an administrator to inspect the app locally on
-Chopin at `http://127.0.0.1:8080`. Administrative port-forward/exec access is
-privileged access and is not governed by ordinary pod-to-pod firewall rules.
-For a browser on your computer, separately forward the local port over SSH:
-`ssh -L 8080:127.0.0.1:8080 rocheque@192.168.1.82`.
+The old `inet chopin_guard` nftables table can remain until reboot; it enforces
+the same packet checks as `homelab_guard`. Reboot during a maintenance window
+after the new generation is verified. A normal rebuild never repartitions.
 
-The RuntimeClass reserves 1 GiB and 100 millicores of additional capacity per
-pod for conservative VM overhead accounting. With workload limits, Kata sizes
-guest memory as the workload memory limit plus 256 MiB; without limits it uses
-1 GiB. Set realistic resource requests and limits on every application.
-`local-path` PVCs live on Chopin's disk and are available inside Kata guests.
-They are tied to this node and are not replicated; the provisioner's size
-request is not a disk quota.
+## Install from scratch
 
-## Add security-group rules
+This procedure erases the selected disk. For the live machine, first confirm a
+fresh key-authenticated administrative connection as described above. Save protected, off-machine backups
+first if existing application data or cluster identity must survive. Boot the
+NixOS x86_64 installer in UEFI mode on Chopin and connect it to the LAN/internet.
+The private administrator key is not needed on the installer.
 
-Create administrator-managed namespaces for security groups. Group membership
-should come from namespace labels rather than labels that application users
-can edit on their own pods. Grant application users only namespaced workload
-permissions; keep namespaces, Calico policies, RuntimeClasses, admission
-policies, infrastructure namespaces, and privileged administrative access
-under administrator control. No tenant RoleBindings are installed by default.
-Application service accounts have no policy-management permissions.
+```sh
+# Get a reviewed revision, including its committed flake.lock.
+nix-shell -p git
+git clone https://github.com/quentin-roche/homelab.git
+cd homelab
+git checkout <reviewed-commit>
+# Select the whole target disk by model/serial, not an arbitrary /dev/sda.
+lsblk -o NAME,SIZE,MODEL,SERIAL,FSTYPE,MOUNTPOINTS
+ls -l /dev/disk/by-id/
+```
 
-`examples/security-groups.yaml` illustrates the two sides of allowing a frontend
-namespace to connect to a database namespace on TCP 5432. It is not installed
-automatically. Allow policies need `order` smaller than `1000` so they run before
-the final deny. Both source egress and destination ingress must permit a flow.
-Return traffic is stateful; removing a rule blocks new connections, while
-existing tracked connections can remain until they end or conntrack expires.
-An ordinary Kubernetes NetworkPolicy cannot override the explicit final deny.
+Replace `<target-disk-id>` below with the verified whole-disk ID. The configured
+device is deliberately a nonexistent placeholder, so the installer requires
+an explicit disk selection. First preview (builds the system without formatting):
 
-For a fixed standalone server, rules may use a narrow destination/source CIDR
-and port. This controls the Kubernetes side immediately. To enforce both sides,
-enroll the trusted Linux host with Calico/Felix and an administrator-created
-HostEndpoint, using restricted control-plane credentials. Calico on a server
-is administered by that server's root user; if the workload must not be able
-to alter enforcement, put enforcement on its trusted hypervisor or gateway.
-No other servers were enrolled during this deployment.
+```sh
+sudo nix --extra-experimental-features 'nix-command flakes' \
+  run "$PWD#disko-install" -- --dry-run \
+  --flake "$PWD#chopin" --disk main /dev/disk/by-id/<target-disk-id> \
+  --write-efi-boot-entries
+```
 
-There is no Headscale/Tailscale component in this setup. Calico provides the
-security-group policy. The single-node pod network does not need an overlay
-encryption service. Before adding nodes or remote servers, configure routing,
-explicit node-to-node permissions, and encryption where needed. Current host
-rules intentionally do not permit arbitrary new peers, VXLAN, or control-plane
-clients. Calico's VXLAN configuration is prepared for future node networking;
-VXLAN itself does not encrypt traffic.
+Then run the same command without `--dry-run` to partition, format, install the
+locked NixOS system, and write its EFI boot entry. Disko installs without asking
+for a root password. After success, `sudo reboot` and log in from the Mac:
 
-## Recovery and backups
+```sh
+ssh -i ~/.ssh/personal -o IdentitiesOnly=yes rocheque@192.168.1.82
+# On Chopin:
+sudo -n k3s kubectl get nodes
+sudo -n k3s kubectl get pods -A
+```
 
-Inspect problems with `sudo journalctl -u k3s` and
-`sudo k3s kubectl describe pod -n <namespace> <pod>`. Calico logs are in `kube-system` and in
-`/var/log/calico/cni/cni.log`. The immutable containerd template and Kata
-configuration are generated from `kubernetes.nix`; do not edit generated files
-under `/var/lib/rancher/k3s/agent/etc/containerd`.
+K3s creates fresh credentials and installs Calico, Kata RuntimeClass, admission
+rules, and network policies from the configuration automatically. Allow image
+pulls and initial reconciliation to finish. The installer recreates the
+original filesystem UUIDs for compatibility with existing rebuilds; do not
+attach both original and replacement disks to the same running system.
 
-NixOS rollback: `sudo nixos-rebuild switch --rollback`. Network policies and
-other cluster objects live in the Kubernetes datastore and are not removed by
-a NixOS rollback. If host-policy recovery is necessary, use the local console
-to remove the HostEndpoint and temporarily disable its manifest before
-restarting K3s; do not remove the workload guard as a routine workaround.
+This definition targets Chopin's recorded hardware. For different hardware,
+review the generated hardware scan, interface name, network settings, and KVM
+support. It needs no private GitHub key or saved GitHub login to clone the public
+repository. Personal shell files and manual Kubernetes objects are not restored
+from this configuration.
 
-This is one machine, not a highly available cluster. Back up the SQLite
-datastore under `/var/lib/rancher/k3s/server/db`, the server token, and persistent
-application data. Keep backup credentials and encryption keys protected.
-The simplest consistent maintenance backup stops K3s, copies the entire server
-directory and `/var/lib/rancher/k3s/storage` into a root-only backup directory,
-then restarts K3s. Application VMs can survive a K3s service stop, so also quiesce
-applications or take storage snapshots for consistent application-data backups.
-Store encrypted copies off the machine; no off-host backup destination was
-provided or configured.
+## Flux application recovery
 
-## Verification
+After the runtime is healthy, provision the externally backed-up age identity,
+start `flux-bootstrap`, then reconcile the Git source/root. Applications and
+additional services are Flux-owned, not K3s Nix manifests. Follow the complete
+[recovery runbook](../kubernetes/RECOVERY.md), which separates configuration
+recovery from cluster datastore and persistent-data recovery. Do not start
+stateful writers before their data and volume identities are restored.
 
-Deployment checks on 2026-09-30 confirmed separate guest kernels and boot IDs,
-default deny, explicit TCP allow, denial after revocation, DNS, node/LAN/Internet
-isolation, rejection of isolation bypasses, local-path storage inside a VM,
-and the firewall guard's rejection of packets without Calico's approval mark.
-The Kubernetes API and kubelet were unreachable from the LAN, while a fresh SSH
-connection succeeded. The test workloads and temporary allow policies were
-removed afterward.
+## Restore data and recover access
 
-Run `sudo bash chopin/verify-isolation.sh` after changes to the runtime or network
-stack. It creates temporary test VMs and policies, verifies real traffic, and
-cleans up. It needs an otherwise unused namespace called `isolation-check`.
+Git reproduces the system and managed manifests. It does not reproduce mutable
+data. Quiesce application writes before stopping K3s; pods/VMs can keep running
+after the service stops. Back up `/var/lib/rancher/k3s/server` (including SQLite,
+server token, and encryption keys) and `/var/lib/rancher/k3s/storage` together,
+plus any external volumes, into root-only storage and encrypt off-machine copies.
+Optionally protect SSH host keys and administrator home data too. No off-machine
+backup destination is configured.
 
-Upstream references: [K3s containerd configuration](https://docs.k3s.io/advanced),
-[Calico CNI configuration](https://docs.tigera.io/calico/latest/reference/configure-cni-plugins),
-[Calico host endpoints](https://docs.tigera.io/calico/latest/reference/host-endpoints/overview),
-and [Kata installation](https://github.com/kata-containers/kata-containers/blob/4.2.0/docs/installation.md).
+For restoring a cluster, use the same locked K3s version as the backup. Before
+first boot of the reinstall, create `ln -s /dev/null /tmp/k3s.service` on the
+installer and add `--extra-files /tmp/k3s.service /etc/systemd/system/k3s.service`
+to the installation command. This masks K3s until the backup is restored. Disko's installed root is
+`/mnt/disko-install-root` during installation and is unmounted when it returns.
+After booting with K3s masked, mount the backup, restore both server and storage
+directories with ownership/modes intact, then remove only this mask with
+`sudo systemctl unmask k3s`, run `sudo systemctl daemon-reload`, and start K3s.
+Do not merge a fresh SQLite database with a backup or lose the original token.
+
+If a normal update breaks networking or access, choose the previous generation
+in systemd-boot at the console. Password hashes are locked by this configuration;
+use the installer to mount the existing root and boot partition for rescue
+rather than relying on a local password. NixOS rollback does not roll back the
+Kubernetes datastore. See the [cluster guide](../modules/kubernetes/README.md)
+for policy recovery and integration checks.

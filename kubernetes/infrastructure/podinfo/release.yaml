@@ -1,0 +1,59 @@
+# Stateless platform diagnostic; no ingress or external exposure by default.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: podinfo
+  namespace: flux-system
+spec:
+  interval: 30m
+  serviceAccountName: flux-infrastructure
+  targetNamespace: platform-services
+  storageNamespace: platform-services
+  chart:
+    spec:
+      chart: podinfo
+      version: "6.15.0"
+      sourceRef:
+        kind: HelmRepository
+        name: podinfo
+      interval: 1h
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  test:
+    enable: false
+  values:
+    replicaCount: 1
+    ingress:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: "1"
+        memory: 128Mi
+    securityContext:
+      runAsUser: 1000
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+            patch: |
+              - op: add
+                path: /spec/template/spec/runtimeClassName
+                value: kata-qemu
+              - op: add
+                path: /spec/template/spec/automountServiceAccountToken
+                value: false

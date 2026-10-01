@@ -2,10 +2,12 @@
 # Integration check on Chopin; run as root. No permanent workloads are installed.
 set -euo pipefail
 if [[ ${EUID} != 0 ]]; then
-  echo "Run with sudo bash chopin/verify-isolation.sh" >&2
+  echo "Run with sudo bash modules/kubernetes/verify-isolation.sh" >&2
   exit 1
 fi
 k() { k3s kubectl "$@"; }
+task_node_ip=${1:?Usage: verify-isolation.sh NODE_IP LAN_ROUTER_IP}
+task_router_ip=${2:?Usage: verify-isolation.sh NODE_IP LAN_ROUTER_IP}
 task_ns=isolation-check
 if k get namespace "$task_ns" >/dev/null 2>&1; then
   echo "Namespace $task_ns already exists; refusing to modify it." >&2
@@ -65,9 +67,9 @@ blocked() {
   echo "PASS: blocked $task_url"
 }
 blocked "http://$task_server_ip:8080"
-blocked "http://192.168.1.82:22"
-blocked "http://192.168.1.82:6443"
-blocked "http://192.168.1.254:80"
+blocked "http://$task_node_ip:22"
+blocked "http://$task_node_ip:6443"
+blocked "http://$task_router_ip:80"
 blocked "http://1.1.1.1:80"
 
 cat > "$task_tmp/allow.yaml" <<'YAML'
@@ -104,7 +106,7 @@ spec:
 YAML
 k apply -f "$task_tmp/allow.yaml"
 task_allowed=false
-for task_attempt in {1..10}; do
+for ((task_attempt=0; task_attempt<10; task_attempt++)); do
   if [[ $(k exec -n "$task_ns" client -- wget -T 2 -qO- "http://$task_server_ip:8080" 2>/dev/null) == kata-calico-ok ]]; then
     task_allowed=true
     break

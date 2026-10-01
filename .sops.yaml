@@ -1,0 +1,6 @@
+# Set this PUBLIC age recipient before adding encrypted application secrets.
+# An empty recipient deliberately makes encryption fail; no private key goes here.
+creation_rules:
+  - path_regex: ^kubernetes/.*\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: ""

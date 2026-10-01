@@ -4,6 +4,10 @@ import yaml
 
 documents = list(yaml.safe_load_all(open(sys.argv[1])))
 for document in documents:
+    # Generated upstream CRDs include server-owned status/timestamps; they are
+    # not desired state and should not be sent by the declarative installer.
+    document.pop("status", None)
+    document.get("metadata", {}).pop("creationTimestamp", None)
     if document.get("kind") == "ConfigMap" and document["metadata"]["name"] == "calico-config":
         document["data"]["calico_backend"] = "vxlan"
         document["data"]["cni_network_config"] = document["data"]["cni_network_config"].replace(
@@ -18,8 +22,8 @@ for document in documents:
         "CLUSTER_TYPE": "k8s",
         "CALICO_IPV4POOL_IPIP": "Never",
         "CALICO_IPV4POOL_VXLAN": "Always",
-        "CALICO_IPV4POOL_CIDR": "10.42.0.0/16",
-        "IP_AUTODETECTION_METHOD": "interface=enp1s0f1",
+        "CALICO_IPV4POOL_CIDR": sys.argv[3],
+        "IP_AUTODETECTION_METHOD": f"interface={sys.argv[2]}",
         "FELIX_DEFAULTENDPOINTTOHOSTACTION": "RETURN",
         "FELIX_IPTABLESBACKEND": "NFT",
         "FELIX_IPV6SUPPORT": "true",

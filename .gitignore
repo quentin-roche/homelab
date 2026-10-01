@@ -6,3 +6,15 @@ secrets/
 *.pem
 result
 result-*
+__pycache__/
+*.pyc
+id_ed25519*
+id_rsa*
+!*.pub
+kubeconfig*
+backups/
+*.agekey
+age-identity*
+keys.txt
+*.dec.yaml
+*.plaintext.yaml
