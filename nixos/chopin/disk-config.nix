@@ -27,7 +27,7 @@
   ];
 
   disko.devices = {
-    disk.main = {
+    disk.system = {
       type = "disk";
       device = "/dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NB82502W";
       content = {

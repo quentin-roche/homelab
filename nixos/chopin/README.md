@@ -91,7 +91,7 @@ the system without formatting):
 ```sh
 sudo nix --extra-experimental-features 'nix-command flakes' \
   run "$PWD/nixos#disko-install" -- --dry-run \
-  --flake "$PWD/nixos#chopin" --disk main /dev/disk/by-id/<target-disk-id> \
+  --flake "$PWD/nixos#chopin" --disk system /dev/disk/by-id/<target-disk-id> \
   --write-efi-boot-entries
 ```
 
