@@ -19,6 +19,10 @@ loopback. Kubernetes administration goes through SSH.
 | `kubernetes.nix` | Host settings for the [shared cluster module](../modules/kubernetes/README.md) |
 
 The Samsung 970 EVO SSD is selected by its persistent model/serial device ID.
+The Disko disk name `system` preserves the installed partition labels
+`disk-system-ESP` and `disk-system-zfs`. Check the EFI device and `/boot` mount
+before switching a configuration; changing that logical disk name changes the
+generated mount path even when the physical disk is the same.
 The single-disk pool `zroot` uses `ashift=12`; `zroot/nixos` mounts at `/` and
 contains the Nix store, K3s state, and local-path PVC data. Dataset properties
 are LZ4 compression, 128 KiB records, system attributes, POSIX ACLs, relative
@@ -37,6 +41,8 @@ There is no `rocheque` account or sudo requirement.
 ssh -i ~/.ssh/personal -o IdentitiesOnly=yes root@192.168.1.167
 # On Chopin, with the repository checked out:
 cd /root/homelab
+test -b /dev/disk/by-partlabel/disk-system-ESP
+findmnt /boot
 nixos-rebuild build --flake "$PWD/nixos#chopin"
 nixos-rebuild switch --flake "$PWD/nixos#chopin"
 k3s kubectl get nodes
