@@ -1,0 +1,61 @@
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: flux-runtime-access
+  labels:
+    homelab/owner: nix
+spec:
+  order: 80
+  selector: &controllers "projectcalico.org/namespace == 'flux-system' && app in {'source-controller', 'kustomize-controller', 'helm-controller'}"
+  types: [Ingress, Egress]
+  ingress:
+    - action: Allow
+      protocol: TCP
+      source:
+        selector: *controllers
+      destination:
+        selector: "app == 'source-controller'"
+        ports: [9090]
+    - action: Allow
+      protocol: TCP
+      source:
+        nets: ["@NODE_IP@/32"]
+      destination:
+        ports: [9440, 9090]
+  egress:
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets: ["@NODE_IP@/32"]
+        ports: [6443]
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets: ["@API_IP@/32"]
+        ports: [443]
+    - action: Allow
+      protocol: TCP
+      destination:
+        selector: "projectcalico.org/namespace == 'flux-system' && app == 'source-controller'"
+        ports: [9090]
+    - action: Allow
+      protocol: TCP
+      source:
+        selector: "app == 'source-controller'"
+      destination:
+        nets: [0.0.0.0/0]
+        notNets:
+          - 0.0.0.0/8
+          - 10.0.0.0/8
+          - 100.64.0.0/10
+          - 127.0.0.0/8
+          - 169.254.0.0/16
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+          - 224.0.0.0/4
+          - 240.0.0.0/4
+          - "@NODE_IP@/32"
+          - "@SERVICE_CIDR@"
+          - "@POD_CIDR@"
+          - "@LAN_CIDR@"
+        ports: [443]

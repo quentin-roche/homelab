@@ -7,27 +7,27 @@ spec:
   failsafeInboundHostPorts:
     - protocol: TCP
       port: 22
-      net: 192.168.1.0/24
+      net: @LAN_CIDR@
   failsafeOutboundHostPorts: []
 ---
 apiVersion: crd.projectcalico.org/v1
 kind: GlobalNetworkPolicy
 metadata:
-  name: chopin-host-services
+  name: "@NODE_NAME@-host-services"
 spec:
   order: 100
-  selector: "homelab/host == 'chopin'"
+  selector: "homelab/host == '@NODE_NAME@'"
   # Application forwarding is governed by workload policies, not this policy.
   applyOnForward: false
   types: [Ingress, Egress]
   ingress:
     - action: Allow
       source:
-        nets: [127.0.0.0/8, "::1/128", 192.168.1.82/32]
+        nets: [127.0.0.0/8, "::1/128", @NODE_IP@/32]
     - action: Allow
       protocol: TCP
       source:
-        nets: [192.168.1.0/24]
+        nets: [@LAN_CIDR@]
       destination:
         ports: [22]
     - action: Allow
@@ -37,9 +37,15 @@ spec:
       destination:
         ports: [6443, 10250]
     - action: Allow
+      protocol: TCP
+      source:
+        selector: "projectcalico.org/namespace == 'flux-system' && app in {'source-controller', 'kustomize-controller', 'helm-controller'}"
+      destination:
+        ports: [6443]
+    - action: Allow
       protocol: UDP
       source:
-        nets: [192.168.1.0/24]
+        nets: [@LAN_CIDR@]
         ports: [67]
       destination:
         ports: [68]
@@ -51,16 +57,16 @@ spec:
   egress:
     - action: Allow
       destination:
-        nets: [127.0.0.0/8, "::1/128", 192.168.1.82/32, 10.42.0.0/16, 10.43.0.0/16]
+        nets: [127.0.0.0/8, "::1/128", @NODE_IP@/32, @POD_CIDR@, @SERVICE_CIDR@]
     - action: Allow
       protocol: UDP
       destination:
-        nets: [192.168.1.254/32, "fd0f:ee:b0::1/128"]
+        nets: @DNS_CIDRS@
         ports: [53]
     - action: Allow
       protocol: TCP
       destination:
-        nets: [192.168.1.254/32, "fd0f:ee:b0::1/128"]
+        nets: @DNS_CIDRS@
         ports: [53]
     - action: Allow
       protocol: TCP
@@ -79,10 +85,10 @@ spec:
 apiVersion: crd.projectcalico.org/v1
 kind: HostEndpoint
 metadata:
-  name: chopin
+  name: "@NODE_NAME@"
   labels:
-    homelab/host: chopin
+    homelab/host: "@NODE_NAME@"
 spec:
-  node: chopin
+  node: "@NODE_NAME@"
   interfaceName: "*"
-  expectedIPs: [192.168.1.82]
+  expectedIPs: ["@NODE_IP@"]

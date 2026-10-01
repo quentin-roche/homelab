@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kustomize-controller
+  namespace: flux-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          args:
+            - --watch-all-namespaces=false
+            - --log-level=info
+            - --log-encoding=json
+            - --enable-leader-election
+            - --no-cross-namespace-refs=true
+            - --default-service-account=default
+            - --no-remote-bases=true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helm-controller
+  namespace: flux-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          args:
+            - --watch-all-namespaces=false
+            - --log-level=info
+            - --log-encoding=json
+            - --enable-leader-election
+            - --no-cross-namespace-refs=true
+            - --default-service-account=default
