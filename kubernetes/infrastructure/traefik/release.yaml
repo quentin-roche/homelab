@@ -65,8 +65,8 @@ spec:
       isDefaultClass: false
       name: traefik
     service:
-      type: NodePort
       spec:
+        type: NodePort
         externalTrafficPolicy: Local
     ports:
       web:
