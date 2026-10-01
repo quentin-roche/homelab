@@ -7,11 +7,12 @@
 let
   cluster = config.homelab.kubernetes;
   cfg = cluster.flux;
-  distribution = import ./sources.nix { inherit pkgs; };
-  runtime = (import ../render.nix { inherit pkgs; }) {
+  packages = import ./packages.nix { inherit pkgs; };
+  distribution = packages.flux;
+  runtime = packages.render {
     name = "flux-runtime.yaml";
     upstream = distribution.install;
-    overlay = ./.;
+    overlay = ./flux;
   };
   serviceOctets = lib.splitString "." (builtins.head (lib.splitString "/" cluster.serviceCIDR));
   apiIP = lib.concatStringsSep "." (
@@ -21,7 +22,7 @@ let
     lib.replaceStrings
       [ "@NODE_IP@" "@API_IP@" "@SERVICE_CIDR@" "@POD_CIDR@" "@LAN_CIDR@" ]
       [ cluster.nodeIP apiIP cluster.serviceCIDR cluster.podCIDR cluster.lanCIDR ]
-      (builtins.readFile ./network-policy.yaml.in)
+      (builtins.readFile ./flux/network-policy.yaml.in)
   );
   sync = pkgs.writeText "flux-sync.json" (
     builtins.toJSON {
@@ -137,7 +138,7 @@ in
     ];
     services.k3s.manifests = {
       "30-flux-runtime".source = runtime;
-      "31-flux-rbac".source = ./rbac.yaml;
+      "31-flux-rbac".source = ./flux/rbac.yaml;
       "32-flux-sync".source = sync;
       "33-flux-network".source = networkPolicy;
     };
@@ -168,7 +169,7 @@ in
         pkgs.jq
       ];
       script = ''
-        exec ${pkgs.bash}/bin/bash ${../../../scripts/provision-flux-credentials.sh} ${lib.escapeShellArg cfg.ageIdentityFile} ${
+        exec ${pkgs.bash}/bin/bash ${../../scripts/provision-flux-credentials.sh} ${lib.escapeShellArg cfg.ageIdentityFile} ${
           lib.optionalString (cfg.gitCredentialDirectory != null) (
             lib.escapeShellArg cfg.gitCredentialDirectory
           )

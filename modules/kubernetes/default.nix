@@ -6,7 +6,8 @@
 }:
 let
   cfg = config.homelab.kubernetes;
-  kata = import ./kata.nix { inherit pkgs; };
+  packages = import ./packages.nix { inherit pkgs; };
+  inherit (packages) kata;
   kataConfig = pkgs.runCommand "kata.toml" { } ''
     cp ${kata}/share/defaults/kata-containers/runtime-rs/configuration-qemu-runtime-rs.toml "$out"
     chmod u+w "$out"
@@ -18,7 +19,6 @@ let
       -e 's/^disable_guest_seccomp = .*/disable_guest_seccomp = false/' \
       "$out"
   '';
-  upstreamCalico = (import ./sources.nix { inherit pkgs; }).calico;
   calicoOverlay = pkgs.linkFarm "calico-overlay" [
     {
       name = "kustomization.yaml";
@@ -37,9 +37,9 @@ let
       );
     }
   ];
-  calico = (import ./render.nix { inherit pkgs; }) {
+  calico = packages.render {
     name = "calico.yaml";
-    upstream = upstreamCalico;
+    upstream = packages.calico;
     overlay = calicoOverlay;
   };
   hostSecurity = pkgs.writeText "host-security.yaml" (
@@ -83,7 +83,7 @@ let
   '';
 in
 {
-  imports = [ ./flux ];
+  imports = [ ./flux.nix ];
   options.homelab.kubernetes = {
     enable = lib.mkEnableOption "K3s with Kata VM isolation and Calico policy";
     nodeName = lib.mkOption {

@@ -1,15 +1,29 @@
-# Kubernetes, Kata, and Calico
+# Cluster runtime
 
-A reusable NixOS module for independent single-node K3s clusters on x86_64
-machines with KVM. Hosts provide their network identity; the module generates
-Calico, host policies, containerd configuration, and the fail-closed guard.
-K3s and Disko use locked Nixpkgs. Calico 3.32.2 and Kata 4.2.0 are checksum-pinned.
+NixOS starts K3s, Kata, Calico and Flux. Flux then manages applications and
+additional services from Git. Keeping the runtime in Nix avoids a bootstrap
+cycle: Flux itself needs both Calico networking and the Kata runtime to start.
+Calico and Kata are not Helm-managed in this configuration.
 
-## Enable on a host
+There are three Nix files:
+
+| File | Responsibility |
+| --- | --- |
+| `default.nix` | K3s, containerd/Kata configuration, networking and essential isolation |
+| `flux.nix` | Flux installation, scoped access, Git entry point and external credential provisioning |
+| `packages.nix` | Checksum-pinned dependencies, Kata packaging and the shared Kustomize builder |
+
+The `calico/` and `flux/` folders contain YAML overlays. Host settings belong
+under `chopin/`; application definitions belong under `kubernetes/`.
+
+## Reuse on another host
+
+This module creates an independent single-node K3s cluster on x86_64 Linux with
+KVM. Import it and supply the host's network identity:
 
 ```nix
 {
-  imports = [ ../modules/kubernetes ]; # Adjust relative path for the host.
+  imports = [ ../modules/kubernetes ];
   homelab.kubernetes = {
     enable = true;
     # nodeName defaults to networking.hostName.
@@ -22,170 +36,95 @@ K3s and Disko use locked Nixpkgs. Calico 3.32.2 and Kata 4.2.0 are checksum-pinn
 }
 ```
 
-External flakes can import `homelab.nixosModules.kubernetes`. Each host must
-configure its own disk, static network address, SSH users, and hardware KVM
-module (`kvm-amd` or `kvm-intel`). [Chopin](../../chopin/README.md) is the first
-consumer. This creates a separate cluster on each host; joining hosts into a
-shared cluster additionally needs credentials, routing, and node policies.
+External flakes can import `homelab.nixosModules.kubernetes`. Configure disks,
+static networking, SSH users and `kvm-amd` or `kvm-intel` in the host module.
+[Chopin](../../chopin/README.md) shows the complete setup, including Flux.
+Joining nodes into one cluster additionally requires credentials, routing and
+node policies; changing existing pod/service CIDRs requires a migration.
+Calico pool initialization values do not rewrite existing pools.
 
-Changing pod/service CIDRs on an existing cluster requires an explicit datastore
-and network migration. Calico pool initialization settings describe a fresh
-cluster; changing an environment variable does not rewrite an existing pool.
+## Startup and ownership
 
-## What is enforced
+1. NixOS configures the host and immutable Kata/containerd runtime, then starts
+   the nftables guard before K3s.
+2. K3s applies Nix-owned Calico and essential admission/network policies.
+3. The Nix-installed Flux controllers start with Kata once networking is ready.
+   Protected external files supply the age identity and optional Git credentials.
+4. Flux reconciles the cluster entry point in Git, using Kustomize or Helm for
+   selected applications and services.
 
-- K3s comes from the locked Nixpkgs input; locked version: `v1.35.8+k3s1`.
-- Kata 4.2.0's checksum-pinned static Rust runtime runs QEMU with KVM. Each
-  application **pod** has its own VM; containers in the same pod share that VM.
-- Calico Open Source 3.32.2 enforces policy on the host, outside the guest.
-  Pod addresses are `10.42.0.0/16`; service addresses are `10.43.0.0/16`.
-  Flannel and K3s's network-policy controller are disabled.
-- All application namespaces, including newly created ones, have an explicit
-  final ingress/egress deny policy. The only default application egress is
-  TCP/UDP DNS to CoreDNS. Internet, LAN, other pods, the node, and Kubernetes
-  API access require explicit allow rules.
-- Admission requires `runtimeClassName: kata-qemu` outside the infrastructure
-  namespaces. It rejects host namespaces, host paths, host ports, privileged
-  containers, device requests, extra networks, IP spoofing annotations, and
-  Kata configuration overrides. `applications` and `default` also enforce
-  Kubernetes's restricted Pod Security Standard.
-- A separate nftables guard starts before K3s. New pod packets must carry
-  Calico's host-side approval mark, including while Calico is starting.
-  Established/related connections retain the normal stateful behavior.
-- SSH is allowed from the configured `lanCIDR`. The Kubernetes API and kubelet are not
-  exposed to LAN clients. Infrastructure pods can reach the API and kubelet
-  only after Calico approves their traffic.
-- Each node has a wildcard Calico HostEndpoint and an explicit host policy.
-  Host egress permits cluster traffic, the router's DNS, HTTP/HTTPS for image
-  pulls and updates, NTP, DHCP, and ICMP/ICMPv6. Application egress does **not**
-  inherit these host allowances. The node policy covers IPv4 and IPv6;
-  pod networking is IPv4 only.
-- Kubernetes Secrets encryption is enabled. Administrative kubeconfig and
-  cluster credentials remain on Chopin with root-only access.
+K3s/Nixpkgs are locked in `flake.lock`; Calico 3.32.2, Kata 4.2.0 and Flux 2.9.5
+are pinned in `packages.nix`. Calico and Flux are rendered with Kustomize.
+Application updates need Git reconciliation, not a NixOS rebuild. Do not add
+application resources to `services.k3s.manifests` or give Flux ownership of the
+runtime. See [application management](../../kubernetes/README.md) for permissions,
+secret provisioning and the single, initially empty cluster entry point.
 
-The trusted base is the host, KVM, QEMU, virtiofsd, Kata, and the Kubernetes/
-Calico administrators. VM isolation reduces the shared-kernel risk; it is
-not a guarantee against hypervisor or runtime vulnerabilities. Keep both
-the host and the bundled guest/runtime patched. System pods in `kube-system`
-use the ordinary runtime because the networking and storage components need
-host access. Never place untrusted workloads in the infrastructure namespaces
-or grant their users permission to deploy there.
+## Isolation
 
-## Operate the cluster
+Each application pod runs in its own Kata VM; containers within a pod share it.
+Calico enforces policy on the host outside that VM. Flannel and K3s's policy
+controller are disabled. Applications have final ingress/egress deny policies;
+only DNS to CoreDNS is allowed by default. Internet, LAN, node, API and other
+pod traffic require explicit administrator-managed allow policies.
 
-On Chopin:
+Admission requires `runtimeClassName: kata-qemu` outside infrastructure
+namespaces. It rejects host namespaces/paths/ports, privileged containers,
+direct device allocation, extra networks, spoofing annotations and Kata
+configuration overrides. Application namespaces enforce restricted Pod Security.
+System pods in `kube-system` use the ordinary runtime for required host access.
+Only trusted administrators should deploy there or manage cluster policies.
+
+The nftables guard rejects new pod traffic without Calico's approval mark,
+including during startup. Established/related connections remain stateful.
+The host has a wildcard Calico HostEndpoint: SSH is permitted from `lanCIDR`,
+while the API and kubelet are not exposed to LAN clients. Host egress permits
+cluster traffic, configured DNS, image/update HTTP/HTTPS, NTP, DHCP and ICMP.
+Applications do not inherit those permissions. Host policies cover IPv4/IPv6;
+pod networking is IPv4 only. VXLAN is not encryption and additional peers need
+explicit routing, permissions and encryption where appropriate.
+
+The RuntimeClass reserves 1 GiB and 100 millicores of VM overhead per pod.
+Guest memory uses workload limits plus 256 MiB, or 1 GiB without limits; set
+realistic requests and limits. Local-path PVCs work inside Kata but are tied to
+this node, are not replicated, and their size request is not a disk quota.
+The trusted base includes the host, KVM, QEMU, virtiofsd, Kata and administrators;
+keep the host and bundled runtime/guest patched.
+
+For security-group access, use administrator-managed namespace labels and
+policies; application accounts cannot manage them. The optional
+`examples/security-groups.yaml` shows a frontend/database TCP 5432 allowance.
+Both source egress and destination ingress must permit a connection. Use an
+order below `1000` to precede the final deny. Ordinary Kubernetes NetworkPolicy
+cannot override that deny. Revocation blocks new connections; tracked ones may
+survive until they end or expire. For external servers, enforce the other side
+on a trusted host, hypervisor or gateway with separately protected credentials.
+
+## Operate and recover
+
+Change runtime configuration in Git and rebuild NixOS after reviewing the
+migration. Do not edit generated containerd files or apply `.yaml.in` templates
+manually. Kubernetes objects persist across NixOS rollbacks, and K3s does not
+automatically delete retired manifests. Use the local console for host-policy
+recovery; do not disable the workload guard as a routine workaround.
 
 ```sh
-cd /home/rocheque/homelab
-sudo nixos-rebuild switch --flake "$PWD#chopin"
-sudo k3s kubectl get nodes
 sudo k3s kubectl get pods -A
-sudo k3s kubectl get globalnetworkpolicies.crd.projectcalico.org
 sudo systemctl status k3s homelab-network-guard
+sudo journalctl -u k3s
 sudo nft list table inet homelab_guard
+# Runtime/network changes also need the live isolation checks:
+sudo bash modules/kubernetes/verify-isolation.sh 192.168.1.82 192.168.1.254
 ```
 
-Stage reviewed configuration files before evaluating a Git flake. Ignored files
-are excluded from its source; never put private material in the checkout. No passwords or credentials are in this
-repository. The declarative manifests are reconciled by K3s; make persistent
-changes in the Nix/YAML files, then rebuild. `host-security.yaml.in` is a Nix
-rendered template; do not apply it directly.
+The isolation check creates temporary VMs and policies in the otherwise unused
+`isolation-check` namespace, verifies traffic/admission and cleans up afterward.
+Calico logs are in `kube-system` and `/var/log/calico/cni/cni.log`.
 
-Application lifecycle belongs to [Flux](../../kubernetes/README.md). Nix owns
-runtime and isolation manifests only; do not add application objects to
-`services.k3s.manifests`. The Nix-owned root source/sync references the cluster
-entry point and does not reconcile itself through Git.
-
-The Flux cluster entry point starts empty; select real applications there.
-Use administrator `kubectl port-forward`/`exec` for troubleshooting, remembering
-that this privileged access is not ordinary pod-to-pod firewall traffic.
-
-Calico and Flux use checksum-pinned upstream manifests with local Kustomize
-patches. Host-specific substitutions are supplied by Nix. There are no Python
-manifest generators. The one credential helper provisions external keys only.
-
-The RuntimeClass reserves 1 GiB and 100 millicores of additional capacity per
-pod for conservative VM overhead accounting. With workload limits, Kata sizes
-guest memory as the workload memory limit plus 256 MiB; without limits it uses
-1 GiB. Set realistic resource requests and limits on every application.
-`local-path` PVCs live on Chopin's disk and are available inside Kata guests.
-They are tied to this node and are not replicated; the provisioner's size
-request is not a disk quota.
-
-## Add security-group rules
-
-Create administrator-managed namespaces for security groups. Group membership
-should come from namespace labels rather than labels that application users
-can edit on their own pods. Grant application users only namespaced workload
-permissions; keep namespaces, Calico policies, RuntimeClasses, admission
-policies, infrastructure namespaces, and privileged administrative access
-under administrator control. No tenant RoleBindings are installed by default.
-Application service accounts have no policy-management permissions.
-
-The optional `examples/security-groups.yaml` illustrates the two sides of allowing a frontend
-namespace to connect to a database namespace on TCP 5432. It is not installed
-automatically. Allow policies need `order` smaller than `1000` so they run before
-the final deny. Both source egress and destination ingress must permit a flow.
-Return traffic is stateful; removing a rule blocks new connections, while
-existing tracked connections can remain until they end or conntrack expires.
-An ordinary Kubernetes NetworkPolicy cannot override the explicit final deny.
-
-For a fixed standalone server, rules may use a narrow destination/source CIDR
-and port. This controls the Kubernetes side immediately. To enforce both sides,
-enroll the trusted Linux host with Calico/Felix and an administrator-created
-HostEndpoint, using restricted control-plane credentials. Calico on a server
-is administered by that server's root user; if the workload must not be able
-to alter enforcement, put enforcement on its trusted hypervisor or gateway.
-No other servers were enrolled during this deployment.
-
-There is no Headscale/Tailscale component in this setup. Calico provides the
-security-group policy. The single-node pod network does not need an overlay
-encryption service. Before adding nodes or remote servers, configure routing,
-explicit node-to-node permissions, and encryption where needed. Current host
-rules intentionally do not permit arbitrary new peers, VXLAN, or control-plane
-clients. Calico's VXLAN configuration is prepared for future node networking;
-VXLAN itself does not encrypt traffic.
-
-## Recovery and backups
-
-Inspect problems with `sudo journalctl -u k3s` and
-`sudo k3s kubectl describe pod -n <namespace> <pod>`. Calico logs are in `kube-system` and in
-`/var/log/calico/cni/cni.log`. The immutable containerd template and Kata
-configuration are generated from `default.nix`; do not edit generated files
-under `/var/lib/rancher/k3s/agent/etc/containerd`.
-
-NixOS rollback: `sudo nixos-rebuild switch --rollback`. See the
-[Chopin recovery guide](../../chopin/README.md) for disk reinstall and backup restoration. Network policies and
-other cluster objects live in the Kubernetes datastore and are not removed by
-a NixOS rollback. If host-policy recovery is necessary, use the local console
-to remove the HostEndpoint and temporarily disable its manifest before
-restarting K3s; do not remove the workload guard as a routine workaround.
-
-This is one machine, not a highly available cluster. Back up the SQLite
-datastore under `/var/lib/rancher/k3s/server/db`, the server token, and persistent
-application data. Keep backup credentials and encryption keys protected.
-The simplest consistent maintenance backup stops K3s, copies the entire server
-directory and `/var/lib/rancher/k3s/storage` into a root-only backup directory,
-then restarts K3s. Application VMs can survive a K3s service stop, so also quiesce
-applications or take storage snapshots for consistent application-data backups.
-Store encrypted copies off the machine; no off-host backup destination was
-provided or configured.
-
-## Verification
-
-Historical deployment checks on Chopin on 2026-09-30 confirmed separate guest kernels and boot IDs,
-default deny, explicit TCP allow, denial after revocation, DNS, node/LAN/Internet
-isolation, rejection of isolation bypasses, local-path storage inside a VM,
-and the firewall guard's rejection of packets without Calico's approval mark.
-The Kubernetes API and kubelet were unreachable from the LAN, while a fresh SSH
-connection succeeded. The test workloads and temporary allow policies were
-removed afterward.
-
-Run `sudo bash modules/kubernetes/verify-isolation.sh 192.168.1.82 192.168.1.254` after changes to the runtime or network
-stack. It creates temporary test VMs and policies, verifies real traffic, and
-cleans up. It needs an otherwise unused namespace called `isolation-check`.
-
-Upstream references: [K3s containerd configuration](https://docs.k3s.io/advanced),
-[Calico CNI configuration](https://docs.tigera.io/calico/latest/reference/configure-cni-plugins),
-[Calico host endpoints](https://docs.tigera.io/calico/latest/reference/host-endpoints/overview),
-and [Kata installation](https://github.com/kata-containers/kata-containers/blob/4.2.0/docs/installation.md).
+Git restores configuration. Back up the K3s datastore/server token, external
+credentials and application data separately to protected off-machine storage.
+Stopping K3s alone may leave application VMs running: quiesce them or use
+consistent storage snapshots. Follow the [recovery runbook](../../kubernetes/RECOVERY.md)
+and [host guide](../../chopin/README.md) for a held startup, reinstall and restoration.
+No off-host backup destination is configured. No Headscale/Tailscale component
+is declared here; inspect additional live services before a migration.

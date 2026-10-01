@@ -6,6 +6,11 @@ and Flux 2.9.5 from pinned inputs. Flux reads this public repository's `main`
 branch and applies one entry point: `kubernetes/clusters/chopin/kustomization.yaml`.
 Applications change after Git reconciliation, without rebuilding NixOS.
 
+Calico and Kata stay in Nix because Flux uses them to start. The startup order
+is host/K3s → Calico and essential policies → Kata-backed Flux → applications.
+See the [runtime guide](../modules/kubernetes/README.md) for the three Nix files
+and their responsibilities. Helm is available for additional services and apps.
+
 The entry point starts empty. Add reusable definitions under `apps/` and
 additional services under `infrastructure/`, then select them in the entry point:
 

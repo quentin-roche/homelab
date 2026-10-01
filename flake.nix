@@ -35,8 +35,7 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          sources = import ./modules/kubernetes/flux/sources.nix { inherit pkgs; };
-          coreSources = import ./modules/kubernetes/sources.nix { inherit pkgs; };
+          dependencies = import ./modules/kubernetes/packages.nix { inherit pkgs; };
           c = self.nixosConfigurations.chopin.config;
           runtimeInputs = pkgs.writeText "chopin-runtime-inputs.json" (
             builtins.toJSON {
@@ -71,7 +70,7 @@
               python
             ];
             text = ''
-              exec python ${./scripts/validate.py} --flux-manifest ${sources.install} --kubernetes-schema ${sources.kubernetesSchema} --calico-manifest ${coreSources.calico} --runtime-inputs ${runtimeInputs} "$@"
+              exec python ${./scripts/validate.py} --flux-manifest ${dependencies.flux.install} --kubernetes-schema ${dependencies.kubernetesSchema} --calico-manifest ${dependencies.calico} --runtime-inputs ${runtimeInputs} "$@"
             '';
           };
         }
