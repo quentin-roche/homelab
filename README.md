@@ -5,7 +5,7 @@ Declarative NixOS hosts, with dependencies pinned in `flake.lock`.
 - [`chopin/`](chopin/README.md): hardware, disks, static networking, key-only
   administrator access, and reinstall/recovery instructions.
 - [`modules/kubernetes/`](modules/kubernetes/README.md): reusable K3s, Calico,
-  Kata VM isolation, security policies, Nix-owned Flux bootstrap, and integration checks.
+  Kata VM isolation, security policies, and Nix-owned Flux bootstrap.
 - [`kubernetes/`](kubernetes/README.md): Flux-managed apps/services, Kustomize/Helm, SOPS/age, and the [recovery runbook](kubernetes/RECOVERY.md).
 
 Stage only reviewed configuration files before checking a Git flake; untracked

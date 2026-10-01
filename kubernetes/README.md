@@ -8,7 +8,7 @@ Applications change after Git reconciliation, without rebuilding NixOS.
 
 Calico and Kata stay in Nix because Flux uses them to start. The startup order
 is host/K3s → Calico and essential policies → Kata-backed Flux → applications.
-See the [runtime guide](../modules/kubernetes/README.md) for the three Nix files
+See the [runtime guide](../modules/kubernetes/README.md) for the component modules
 and their responsibilities. Helm is available for additional services and apps.
 
 The entry point starts empty. Add reusable definitions under `apps/` and
@@ -110,7 +110,7 @@ nix flake check --all-systems --no-build
 nix run .#validate -- --repo "$PWD"
 nix build .#checks.aarch64-darwin.gitops  # Apple Silicon
 # Linux: nix build .#checks.x86_64-linux.chopin .#checks.x86_64-linux.gitops
-nix develop --command shellcheck scripts/provision-flux-credentials.sh modules/kubernetes/verify-isolation.sh
+nix develop --command shellcheck scripts/provision-flux-credentials.sh
 ```
 
 Validation renders Kustomize and checks pinned schemas, ownership, scoped RBAC,

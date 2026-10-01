@@ -1,10 +1,9 @@
 { pkgs }:
 
 # Pinned runtime dependencies and the shared Kustomize builder. This file does
-# not install cluster resources; default.nix and flux.nix declare their owners.
+# not install cluster resources; the component modules declare their owners.
 let
   calicoVersion = "3.32.2";
-  kataVersion = "4.2.0";
   fluxVersion = "2.9.5";
 in
 {
@@ -37,30 +36,4 @@ in
       kustomize build . > "$out"
     '';
 
-  # Upstream's static Rust runtime includes QEMU, virtiofsd, and the guest.
-  # Keep it immutable; guests cannot supply hypervisor configuration.
-  kata = pkgs.stdenvNoCC.mkDerivation {
-    pname = "kata-containers-static";
-    version = kataVersion;
-    src = pkgs.fetchurl {
-      url = "https://github.com/kata-containers/kata-containers/releases/download/${kataVersion}/kata-static-${kataVersion}-amd64.tar.zst";
-      hash = "sha256-uCiQT6Px5J3dfceZxyyxUDzR53LTVMOYfI1BibKmI6g=";
-    };
-    nativeBuildInputs = [ pkgs.zstd ];
-    unpackPhase = "tar --zstd -xf $src";
-    installPhase = ''
-      mkdir -p "$out"
-      cp -a opt/kata/. "$out/"
-      find "$out/share/defaults" -type f -name '*.toml' -exec \
-        sed -i "s|/opt/kata|$out|g" {} +
-      # QEMU also searches its compiled /opt/kata prefix for boot ROMs.
-      mv "$out/bin/qemu-system-x86_64" "$out/bin/qemu-system-x86_64.real"
-      cat > "$out/bin/qemu-system-x86_64" <<EOF
-      #!${pkgs.runtimeShell}
-      exec "$out/bin/qemu-system-x86_64.real" -L "$out/share/kata-qemu/qemu" "\$@"
-      EOF
-      chmod +x "$out/bin/qemu-system-x86_64"
-    '';
-    dontFixup = true;
-  };
 }

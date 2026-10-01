@@ -64,7 +64,6 @@ make it the boot default:
 sudo nixos-rebuild switch --flake "$PWD#chopin"
 sudo k3s kubectl get nodes
 sudo systemctl status k3s homelab-network-guard
-sudo bash modules/kubernetes/verify-isolation.sh 192.168.1.82 192.168.1.254
 ```
 
 The old `inet chopin_guard` nftables table can remain until reboot; it enforces
@@ -159,4 +158,4 @@ in systemd-boot at the console. Password hashes are locked by this configuration
 use the installer to mount the existing root and boot partition for rescue
 rather than relying on a local password. NixOS rollback does not roll back the
 Kubernetes datastore. See the [cluster guide](../modules/kubernetes/README.md)
-for policy recovery and integration checks.
+for policy recovery and live verification requirements.

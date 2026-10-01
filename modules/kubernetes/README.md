@@ -5,15 +5,19 @@ additional services from Git. Keeping the runtime in Nix avoids a bootstrap
 cycle: Flux itself needs both Calico networking and the Kata runtime to start.
 Calico and Kata are not Helm-managed in this configuration.
 
-There are three Nix files:
+Each module has a clear purpose:
 
 | File | Responsibility |
 | --- | --- |
-| `default.nix` | K3s, containerd/Kata configuration, networking and essential isolation |
-| `flux.nix` | Flux installation, scoped access, Git entry point and external credential provisioning |
-| `packages.nix` | Checksum-pinned dependencies, Kata packaging and the shared Kustomize builder |
+| `default.nix` | Component imports and shared host options |
+| `k3s.nix` | K3s server, shared workload policies and recovery startup condition |
+| `kata.nix` | Kata package, KVM prerequisites and containerd integration |
+| `calico.nix` | Calico installation, host policies and firewall guard |
+| `flux.nix` | Flux controllers, scoped access and external credential provisioning |
+| `flux/sync.nix` | Root GitRepository and application Kustomization |
+| `packages.nix` | Pinned upstream manifests, validation schema and shared Kustomize builder |
 
-The `calico/` and `flux/` folders contain YAML overlays. Host settings belong
+The `calico/` and `flux/` folders contain their YAML overlays. Host settings belong
 under `chopin/`; application definitions belong under `kubernetes/`.
 
 ## Reuse on another host
@@ -53,8 +57,9 @@ Calico pool initialization values do not rewrite existing pools.
 4. Flux reconciles the cluster entry point in Git, using Kustomize or Helm for
    selected applications and services.
 
-K3s/Nixpkgs are locked in `flake.lock`; Calico 3.32.2, Kata 4.2.0 and Flux 2.9.5
-are pinned in `packages.nix`. Calico and Flux are rendered with Kustomize.
+K3s/Nixpkgs are locked in `flake.lock`. Calico 3.32.2 and Flux 2.9.5 are pinned
+in `packages.nix`; Kata 4.2.0 is pinned in `kata.nix`. Calico and Flux are
+rendered with Kustomize.
 Application updates need Git reconciliation, not a NixOS rebuild. Do not add
 application resources to `services.k3s.manifests` or give Flux ownership of the
 runtime. See [application management](../../kubernetes/README.md) for permissions,
@@ -91,14 +96,11 @@ this node, are not replicated, and their size request is not a disk quota.
 The trusted base includes the host, KVM, QEMU, virtiofsd, Kata and administrators;
 keep the host and bundled runtime/guest patched.
 
-For security-group access, use administrator-managed namespace labels and
-policies; application accounts cannot manage them. The optional
-`examples/security-groups.yaml` shows a frontend/database TCP 5432 allowance.
-Both source egress and destination ingress must permit a connection. Use an
-order below `1000` to precede the final deny. Ordinary Kubernetes NetworkPolicy
-cannot override that deny. Revocation blocks new connections; tracked ones may
-survive until they end or expire. For external servers, enforce the other side
-on a trusted host, hypervisor or gateway with separately protected credentials.
+Additional access requires administrator-managed namespace labels and policies.
+Both source egress and destination ingress must permit the connection. Use an
+order below `1000` to precede the final deny; ordinary Kubernetes NetworkPolicy
+cannot override it. Revocation blocks new connections, while tracked ones may
+survive until they end or expire.
 
 ## Operate and recover
 
@@ -113,13 +115,12 @@ sudo k3s kubectl get pods -A
 sudo systemctl status k3s homelab-network-guard
 sudo journalctl -u k3s
 sudo nft list table inet homelab_guard
-# Runtime/network changes also need the live isolation checks:
-sudo bash modules/kubernetes/verify-isolation.sh 192.168.1.82 192.168.1.254
 ```
 
-The isolation check creates temporary VMs and policies in the otherwise unused
-`isolation-check` namespace, verifies traffic/admission and cleans up afterward.
-Calico logs are in `kube-system` and `/var/log/calico/cni/cni.log`.
+Calico logs are in `kube-system` and `/var/log/calico/cni/cni.log`. After runtime
+changes, verify real Kata startup, application DNS, admission rejections and
+blocked traffic to the node, LAN and internet. Static validation cannot prove
+those live behaviors.
 
 Git restores configuration. Back up the K3s datastore/server token, external
 credentials and application data separately to protected off-machine storage.

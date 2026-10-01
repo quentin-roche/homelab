@@ -114,9 +114,10 @@ sudo nft list table inet homelab_guard
 ```
 
 Calico, the firewall guard, admission rules, and namespaces must be healthy.
-Wait for their initial reconciliation/image downloads. Test the isolation stack
-with `sudo bash modules/kubernetes/verify-isolation.sh 192.168.1.82 192.168.1.254`.
-Do not bypass the guard or admission rules as a recovery shortcut.
+Wait for their initial reconciliation/image downloads. Verify Kata startup,
+application DNS, admission enforcement and blocked node/LAN/internet traffic
+before resuming workloads. Do not bypass the guard or admission rules as a
+recovery shortcut.
 
 ## 4. Restore external bootstrap credentials and verify Flux
 
