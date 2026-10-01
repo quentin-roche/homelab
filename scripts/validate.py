@@ -84,7 +84,7 @@ def main():
     require(inputs['assertions'] and not inputs['mutableUsers'], 'NixOS assertions/account settings failed')
     require(inputs['ssh']['AuthenticationMethods'] == 'publickey' and
         not inputs['ssh']['PasswordAuthentication'] and not inputs['ssh']['KbdInteractiveAuthentication'] and
-        inputs['ssh']['PermitRootLogin'] == 'no', 'SSH authentication settings failed')
+        inputs['ssh']['PermitRootLogin'] == 'prohibit-password' and inputs['ssh']['AllowUsers'] == ['root'], 'SSH authentication settings failed')
     require(hashlib.sha256(args.calico_manifest.read_bytes()).hexdigest() ==
         'a8c828a06a87c629a282ebbc424895b77f3a030251993e41ea400a743675bb02', 'Calico checksum changed')
     swagger = json.loads(args.kubernetes_schema.read_text())
@@ -141,7 +141,7 @@ def main():
         https[0]['destination']['ports'] == [443] and '192.168.0.0/16' in https[0]['destination']['notNets'], 'Excessive Flux Internet/LAN egress')
 
     calico = overlay(repo / 'nixos/modules/kubernetes/calico', args.calico_manifest,
-        {'@INTERFACE@': inputs['interface'], '@POD_CIDR@': inputs['podCIDR']})
+        {'@INTERFACE@': inputs['interface'], '@POD_CIDR@': inputs['podCIDR'], '@NODE_IP@': inputs['nodeIP']})
     cm = next(o for o in calico if o['kind'] == 'ConfigMap' and o['metadata']['name'] == 'calico-config')
     cni = json.loads(cm['data']['cni_network_config'].replace('__CNI_MTU__', '0'))
     require(next(p for p in cni['plugins'] if p['type'] == 'calico')['policy_setup_timeout_seconds'] == 30, 'CNI fails open during policy setup')

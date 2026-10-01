@@ -11,8 +11,8 @@
       # External root-only file; never use a Nix path literal here.
       ageIdentityFile = "/var/lib/flux/age/keys.txt";
     };
-    nodeIP = "192.168.1.82";
-    interface = "enp1s0f1";
+    nodeIP = "10.44.0.1";
+    interface = "k3s0";
     lanCIDR = "192.168.1.0/24";
     dnsServerCIDRs = [
       "192.168.1.254/32"

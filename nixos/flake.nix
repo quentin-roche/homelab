@@ -5,6 +5,12 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     disko.url = "github:nix-community/disko/v1.12.0";
     disko.inputs.nixpkgs.follows = "nixpkgs";
+    nixos-anywhere = {
+      url = "github:nix-community/nixos-anywhere";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.disko.follows = "disko";
+      inputs.nixos-stable.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -12,6 +18,7 @@
       self,
       nixpkgs,
       disko,
+      nixos-anywhere,
       ...
     }:
     let
@@ -20,9 +27,17 @@
         system:
         nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
           disko-install = disko.packages.x86_64-linux.disko-install;
+          chopin-installer =
+            nixos-anywhere.inputs.nixos-images.packages.x86_64-linux.kexec-installer-nixos-stable-noninteractive;
         };
     in
     {
+      apps = builtins.mapAttrs (_: packages: {
+        install-chopin = {
+          type = "app";
+          program = "${packages.default}/bin/nixos-anywhere";
+        };
+      }) nixos-anywhere.packages;
       nixosModules.kubernetes = import ./modules/kubernetes;
       nixosConfigurations.chopin = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";

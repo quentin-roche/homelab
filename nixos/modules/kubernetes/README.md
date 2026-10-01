@@ -42,7 +42,7 @@ KVM. Import it and supply the host's network identity:
 
 External flakes use `github:quentin-roche/homelab?dir=nixos` and import
 `homelab.nixosModules.kubernetes`. Configure disks,
-static networking, SSH users and `kvm-amd` or `kvm-intel` in the host module.
+the node interface/address, management networking, SSH users and `kvm-amd` or `kvm-intel` in the host module.
 [Chopin](../../chopin/README.md) shows the complete setup, including Flux.
 Joining nodes into one cluster additionally requires credentials, routing and
 node policies; changing existing pod/service CIDRs requires a migration.
@@ -112,10 +112,10 @@ automatically delete retired manifests. Use the local console for host-policy
 recovery; do not disable the workload guard as a routine workaround.
 
 ```sh
-sudo k3s kubectl get pods -A
-sudo systemctl status k3s homelab-network-guard
-sudo journalctl -u k3s
-sudo nft list table inet homelab_guard
+k3s kubectl get pods -A
+systemctl status k3s homelab-network-guard
+journalctl -u k3s
+nft list table inet homelab_guard
 ```
 
 Calico logs are in `kube-system` and `/var/log/calico/cni/cni.log`. After runtime

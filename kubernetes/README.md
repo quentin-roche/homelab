@@ -60,10 +60,10 @@ The Nix-owned `flux-bootstrap` service runs the one credential helper,
 protected external files; it does not install Flux or depend on a local checkout.
 
 ```sh
-sudo install -d -m 0700 /var/lib/flux/age
-sudo install -m 0600 /protected-backup/chopin.agekey /var/lib/flux/age/keys.txt
-sudo systemctl restart flux-bootstrap
-sudo systemctl status flux-bootstrap
+install -d -m 0700 /var/lib/flux/age
+install -m 0600 /protected-backup/chopin.agekey /var/lib/flux/age/keys.txt
+systemctl restart flux-bootstrap
+systemctl status flux-bootstrap
 ```
 
 The helper validates ownership/mode/key validity, waits for Flux and reapplies
@@ -97,10 +97,10 @@ before retiring the old one. Rewrapping does not rotate application passwords.
 After publishing reviewed changes to `main`, on Chopin:
 
 ```sh
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux reconcile kustomization cluster --with-source
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get kustomizations
-sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get helmreleases
-sudo k3s kubectl get pods -A
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux reconcile kustomization cluster --with-source
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get kustomizations
+env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get helmreleases
+k3s kubectl get pods -A
 ```
 
 From a reviewed checkout using Git-filtered Nix sources:

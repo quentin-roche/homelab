@@ -1,64 +1,85 @@
-{ ... }:
+{ pkgs, ... }:
 
-let
-  rootUUID = "59cc572c-a9a1-4cb1-84f4-9c7d7ede4d49";
-  bootID = "E450D745";
-in
 {
-  # Keep UUID mounts compatible with the existing installation. Formatting
-  # recreates these identifiers. Never attach the old and new disks together.
-  disko.enableConfig = false;
-  disko.devices.disk.main = {
-    # disko-install must receive --disk main /dev/disk/by-id/<chosen-disk>.
-    device = "/dev/disk/by-id/CHOPIN_INSTALL_DISK_MUST_BE_SELECTED";
-    type = "disk";
-    content = {
-      type = "gpt";
-      partitions = {
-        ESP = {
-          priority = 1;
-          size = "1G";
-          type = "EF00";
-          content = {
-            type = "filesystem";
-            format = "vfat";
-            extraArgs = [
-              "-i"
-              bootID
-            ];
-            mountpoint = "/boot";
-            mountOptions = [
-              "fmask=0077"
-              "dmask=0077"
-            ];
+  swapDevices = [ ];
+
+  # Stable, unique identifier used by ZFS when importing the root pool.
+  networking.hostId = "6118a633";
+  boot.supportedFilesystems = [ "zfs" ];
+  boot.zfs.devNodes = "/dev/disk/by-id";
+  boot.zfs.forceImportRoot = false;
+
+  # Keep the existing weekly TRIM policy, using the ZFS pool operation.
+  services.fstrim.enable = false;
+  services.zfs.trim = {
+    enable = true;
+    interval = "weekly";
+  };
+  services.zfs.autoScrub = {
+    enable = true;
+    interval = "monthly";
+    pools = [ "zroot" ];
+  };
+  environment.systemPackages = with pkgs; [
+    smartmontools
+    nvme-cli
+    fio
+  ];
+
+  disko.devices = {
+    disk.main = {
+      type = "disk";
+      device = "/dev/disk/by-id/nvme-Samsung_SSD_970_EVO_1TB_S5H9NS0NB82502W";
+      content = {
+        type = "gpt";
+        partitions = {
+          ESP = {
+            size = "1G";
+            type = "EF00";
+            content = {
+              type = "filesystem";
+              format = "vfat";
+              mountpoint = "/boot";
+              mountOptions = [ "umask=0077" ];
+            };
           };
-        };
-        root = {
-          size = "100%";
-          content = {
-            type = "filesystem";
-            format = "ext4";
-            extraArgs = [
-              "-U"
-              rootUUID
-            ];
-            mountpoint = "/";
+          zfs = {
+            size = "100%";
+            content = {
+              type = "zfs";
+              pool = "zroot";
+            };
           };
         };
       };
     };
+
+    zpool.zroot = {
+      type = "zpool";
+      options = {
+        ashift = "12";
+        autotrim = "off";
+        cachefile = "none";
+      };
+      # Inherited by child datasets unless explicitly overridden.
+      rootFsOptions = {
+        mountpoint = "none";
+        compression = "lz4";
+        xattr = "sa";
+        acltype = "posixacl";
+        atime = "on";
+        relatime = "on";
+        dedup = "off";
+        sync = "standard";
+      };
+      datasets.nixos = {
+        type = "zfs_fs";
+        options = {
+          mountpoint = "legacy";
+          recordsize = "128K";
+        };
+        mountpoint = "/";
+      };
+    };
   };
-  fileSystems."/" = {
-    device = "/dev/disk/by-uuid/${rootUUID}";
-    fsType = "ext4";
-  };
-  fileSystems."/boot" = {
-    device = "/dev/disk/by-uuid/E450-D745";
-    fsType = "vfat";
-    options = [
-      "fmask=0077"
-      "dmask=0077"
-    ];
-  };
-  swapDevices = [ ];
 }

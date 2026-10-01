@@ -9,6 +9,10 @@ spec:
       containers:
         - name: calico-node
           env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "@NODE_IP@"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "6443"
             - name: CLUSTER_TYPE
               value: k8s
             - name: CALICO_IPV4POOL_IPIP
@@ -34,8 +38,24 @@ spec:
             exec:
               command: [/bin/calico-node, -felix-ready]
       initContainers:
+        - name: upgrade-ipam
+          env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "@NODE_IP@"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "6443"
+        - name: ebpf-bootstrap
+          env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "@NODE_IP@"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "6443"
         - name: install-cni
           env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "@NODE_IP@"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "6443"
             - name: CNI_NET_DIR
               value: /var/lib/rancher/k3s/agent/etc/cni/net.d
       volumes:
